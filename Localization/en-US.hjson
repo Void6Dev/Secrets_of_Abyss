@@ -1,0 +1,97 @@
+Mods: {
+	SoA: {
+		Items: {
+			AbyssScale_small: {
+				DisplayName: Abyss Scale (small)
+				Tooltip: Can be obtained from new ocean creatures
+			}
+
+			Aquasaw: {
+				DisplayName: Aquasaw
+				Tooltip: With 30% chance can apply crumble effect
+			}
+
+			LavaShard: {
+				DisplayName: Lava Shard
+				Tooltip: Pulsing lava
+			}
+
+			CurseOfMe: {
+				DisplayName: Curse of Me
+				Tooltip:
+					'''
+					Decrease Player regeneration by 3
+					If Player get damaged by enemy or projectile fire 5 projectile 
+					Damage from projectiles based on Player magic damage
+					'''
+			}
+
+			InfernoShuriken: {
+				DisplayName: Inferno Shuriken
+				Tooltip: Explodes on impact, dealing area damage and igniting enemies.
+			}
+
+			ClawsOfLavaShadow: {
+				DisplayName: Claws of lava spreading
+				Tooltip:
+					'''
+					Mark an enemy that accumulates damage with each hit, and explodes if you stop dealing damage
+					Right click for small dash with immunity frames(Cooldown 2 sec)
+					uff too hot
+					'''
+			}
+
+			Tidesand: {
+				DisplayName: Tidesand
+				Tooltip: Sand of Forgotten ocean
+			}
+
+			Ttorch: {
+				DisplayName: Ttorch
+				Tooltip: Work underwater
+			}
+
+			ShardedSpear: {
+				DisplayName: Spear of Waves
+				Tooltip: Rare treasure
+			}
+
+			StaffOfTornado: {
+				DisplayName: Staff Of Tornado
+				Tooltip: ""
+			}
+
+			FlinxHood: {
+				SetBonus:
+					'''
+					Increases whip range by 30%
+					Press 2 times DOWN to turn off set bonus visual effect
+					'''
+				DisplayName: Flinx Hood
+				Tooltip: Increases summon damage by 5%
+			}
+		}
+
+		Projectiles: {
+			AquasawProjectile.DisplayName: Aquasaw Projectile
+			CursedProjectile.DisplayName: Cursed Projectile
+			InfernoShurikenProjectile.DisplayName: Inferno Shuriken Projectile
+			ShardedSpearBeam.DisplayName: Sharded Spear Beam
+			ShardedSpearProjectile.DisplayName: Sharded Spear Projectile
+		}
+
+		Buffs: {
+			CoM_debaff: {
+				DisplayName: Cursed Reload
+				Description: Waiting...
+			}
+
+			LavaExplosionDebuff: {
+				DisplayName: Marked
+				Description: 1..2..3..Oh whait 1..BOOM
+			}
+		}
+
+		NPCs.Eel.DisplayName: Eel
+	}
+}

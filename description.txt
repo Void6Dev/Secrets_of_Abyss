@@ -1,0 +1,13 @@
+Mod about ocean expansion(and maybe rework shimmer(not how it's works))
+Features:
+-1 PreH-Bosses
+-10 Items
+-5 enemy's
+-1 biome(in ocean on side where shimmer)
+
+in Future:
+-10 Bosses(3 PreH, 6 Hardmode, 1 PostML)
+-100 Items(maybe more)
+-30 enemy's
+-2 biome
+
