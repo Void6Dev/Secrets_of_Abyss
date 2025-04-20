@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework;
 using SoA.Content.Items.Materials;
 using SoA.Content.Buffs;
 using Terraria.Audio;
+using System;
 
 namespace SoA.Content.Items.Weapons
 {
@@ -32,6 +33,7 @@ namespace SoA.Content.Items.Weapons
         public override void AddRecipes() {
             Recipe recipe = CreateRecipe();
             recipe.AddIngredient(ModContent.ItemType<LavaShard>(), 10);
+            recipe.AddIngredient(ModContent.ItemType<LavaShard>(), 10);
             recipe.AddTile(TileID.Furnaces);
             recipe.Register();
         }
@@ -39,7 +41,7 @@ namespace SoA.Content.Items.Weapons
         public override void ModifyHitNPC(Player player, NPC target, ref NPC.HitModifiers modifiers) {
             target.AddBuff(ModContent.BuffType<LavaExplosionDebuff>(), 30);
             LavaExplosionGlobalNPC modNPC = target.GetGlobalNPC<LavaExplosionGlobalNPC>();
-            modNPC.cumulativeDamage += Item.damage; // Add the weapon's damage to the cumulative damage
+            modNPC.cumulativeDamage += Item.damage;
         }
 
         public override void MeleeEffects(Player player, Rectangle hitbox) {
@@ -49,7 +51,7 @@ namespace SoA.Content.Items.Weapons
         }
 
         public override bool AltFunctionUse(Player player) {
-            return true; // Allow right-click functionality
+            return true;
         }
 
         public override bool? UseItem(Player player) {
@@ -61,12 +63,11 @@ namespace SoA.Content.Items.Weapons
         }
 
         private void DashTowardsCursor(Player player) {
-            LavaShadowPlayer modPlayer = player.GetModPlayer<LavaShadowPlayer>();
+            LavaDashPlayer modPlayer = player.GetModPlayer<LavaDashPlayer>();
             modPlayer.StartDash();
             Vector2 dashDirection = Vector2.Normalize(Main.MouseWorld - player.Center);
-            player.velocity = dashDirection * 15f; // Adjust dash speed here
+            player.velocity = dashDirection * 15f;
 
-            // Start cooldown
             dashCooldownCounter = dashCooldown;
         }
 
@@ -76,9 +77,15 @@ namespace SoA.Content.Items.Weapons
                 dashCooldownCounter--;
             }
         }
+
+        public override void HoldItem(Player player)
+        {
+        player.ChangeDir((int)MathF.Sign(player.velocity.X != 0 ? player.velocity.X : player.direction));
+        }
+
     }
 
-    public class LavaShadowPlayer : ModPlayer
+    public class LavaDashPlayer : ModPlayer
     {
         public bool isDashing;
         private int dashDuration = 25; // Number of frames the dash lasts
@@ -108,7 +115,7 @@ namespace SoA.Content.Items.Weapons
             dashVelocity.Normalize();
             dashVelocity *= 20f;
             Player.velocity = dashVelocity;
-
         }
+        
     }
 }
