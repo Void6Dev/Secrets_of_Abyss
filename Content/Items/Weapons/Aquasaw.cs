@@ -1,8 +1,8 @@
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
-using Microsoft.Xna.Framework;
 using SoA.Content.Projectiles;
+using SoA.Content.Items.Placebles;
 
 namespace SoA.Content.Items.Weapons
 {
@@ -42,25 +42,10 @@ namespace SoA.Content.Items.Weapons
         public override void AddRecipes(){
             CreateRecipe()
                 .AddIngredient(ItemID.SawtoothShark)
-                .AddIngredient(ItemID.SandBlock, 69)
+                .AddIngredient(ItemID.SharkFin, 2)
+                .AddIngredient(ModContent.ItemType<Tidesand>(), 25)
                 .AddTile(TileID.Anvils)
                 .Register();
-        }
-
-
-
-        public override void MeleeEffects(Player player, Rectangle hitbox)
-        {
-            if (Main.rand.NextBool(3)) // With 1/3 chance per tick (60 ticks = 1 second)...
-            {
-                // ...spawning dust
-                Dust.NewDust(new Vector2(hitbox.X, hitbox.Y), // Position to spawn
-                hitbox.Width, hitbox.Height, // Width and Height
-                DustID.Poisoned, // Dust type. Check https://terraria.wiki.gg/wiki/Dust_IDs
-                0, 0, // Speed X and Speed Y of dust, it have some randomization
-                125); // Dust transparency, 0 - full visibility, 255 - full transparency
-
-            }
         }
     }
 }

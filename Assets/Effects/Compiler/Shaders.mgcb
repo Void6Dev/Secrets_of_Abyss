@@ -1,0 +1,7 @@
+
+/outputDir:.
+/intermediateDir:obj
+
+/importer:EffectImporter
+/processor:EffectProcessor
+/build:BeamDistortion.fx

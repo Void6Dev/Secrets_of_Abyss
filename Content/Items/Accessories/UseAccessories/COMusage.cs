@@ -1,6 +1,5 @@
 using Terraria;
 using Terraria.ModLoader;
-using Terraria.ID;
 using Microsoft.Xna.Framework;
 using System;
 using SoA.Content.Projectiles;
@@ -10,9 +9,16 @@ namespace SoA.Content.Items.Accessories.UseAccessories
 {
     public class COMusage : ModPlayer
     {
-        public bool CurseOfMe;
-        private float lastLaserTime = -7f; 
+        private const float BurstCooldownSeconds = 5f;
+        private const int BurstShotCount = 5;
+        private const int TicksBetweenShots = 6;
+        private const int BurstBaseDamage = 100;
 
+        public bool CurseOfMe;
+        private float lastLaserTime = -BurstCooldownSeconds - 1f;
+        private int burstShotsLeft = 0;
+        private int burstTimer = 0;
+        private int burstIndex = 0;
         public override void ResetEffects()
         {
             CurseOfMe = false;
@@ -38,33 +44,83 @@ namespace SoA.Content.Items.Accessories.UseAccessories
 
         private void HandleLaserCooldown()
         {
-            float currentTime = Main.GameUpdateCount / 60f; 
-            if (currentTime - lastLaserTime >= 5f) 
+            float currentTime = Main.GameUpdateCount / 60f;
+
+            if (currentTime - lastLaserTime >= BurstCooldownSeconds)
             {
-                int numProjectiles = 5; 
-                    for (int i = 0; i < numProjectiles; i++)
-                    {
-                        FireCursedProjectile();
-                    }
-                    lastLaserTime = currentTime; 
-            }
-            {
-                float remainingTime = 5f - (currentTime - lastLaserTime);
-                int buffDuration = (int)(remainingTime * 60);
-                Player.AddBuff(ModContent.BuffType<CoM_debaff>(), buffDuration);
+                burstShotsLeft = BurstShotCount;
+                burstTimer = 0;
+                burstIndex = 0;
+                lastLaserTime = currentTime;
+                // CoMDebuff — визуальный индикатор перезарядки залпа, эффекта не имеет
+                Player.AddBuff(ModContent.BuffType<CoMDebuff>(), (int)(BurstCooldownSeconds * 60));
             }
         }
 
-        private void FireCursedProjectile()
+        public override void PostUpdate()
+        {
+            // Снаряды спавнит только клиент-владелец, дальше их синхронизирует сам tML
+            if (Player.whoAmI != Main.myPlayer)
+                return;
+
+            if (burstShotsLeft > 0)
+            {
+                burstTimer++;
+
+                if (burstTimer >= TicksBetweenShots)
+                {
+                    FireCursedProjectileBurst(burstIndex);
+
+                    burstIndex++;
+                    burstShotsLeft--;
+                    burstTimer = 0;
+                }
+            }
+        }
+
+        private void FireCursedProjectileBurst(int index)
         {
             NPC target = FindClosestNPC(600f);
+
+            float angleStep = MathHelper.TwoPi / 5f; // 5 снарядов по кругу
+            float angle = angleStep * index;
+
+            // 👉 clockwise вращение
+            Vector2 offset = angle.ToRotationVector2();
+
+            Vector2 spawnPos = Player.Center + offset * 20f;
+
+            Vector2 direction;
+
             if (target != null)
             {
-                Vector2 direction = target.Center - Player.Center;
+                direction = target.Center - spawnPos;
                 direction.Normalize();
+            }
+            else
+            {
+                direction = offset; // если нет цели — стреляем по кругу
+            }
 
-                int damage = (int)(100 * Player.GetDamage(DamageClass.Magic).Multiplicative);
-                Projectile.NewProjectile(Player.GetSource_Accessory(null), Player.Center, direction * 10f, ModContent.ProjectileType<CursedProjectile>(), damage, 5f, Player.whoAmI);
+            // ApplyTo учитывает и аддитивные, и мультипликативные бонусы магического урона
+            int damage = (int)Player.GetTotalDamage(DamageClass.Magic).ApplyTo(BurstBaseDamage);
+
+            Projectile.NewProjectile(
+                Player.GetSource_Accessory(null),
+                spawnPos,
+                direction * 10f,
+                ModContent.ProjectileType<CursedProjectile>(),
+                damage,
+                5f,
+                Player.whoAmI
+            );
+
+            for (int i = 0; i < 8; i++)
+            {
+                Dust d = Dust.NewDustDirect(spawnPos - new Vector2(4), 8, 8, Terraria.ID.DustID.CursedTorch,
+                    direction.X * Main.rand.NextFloat(2f, 6f), direction.Y * Main.rand.NextFloat(2f, 6f));
+                d.noGravity = true;
+                d.scale = Main.rand.NextFloat(1f, 1.5f);
             }
         }
 

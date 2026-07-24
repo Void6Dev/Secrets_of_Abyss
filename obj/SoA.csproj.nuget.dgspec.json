@@ -1,20 +1,20 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\user\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj": {}
+    "C:\\Users\\User\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj": {}
   },
   "projects": {
-    "C:\\Users\\user\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj": {
+    "C:\\Users\\User\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\user\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj",
+        "projectUniqueName": "C:\\Users\\User\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj",
         "projectName": "SoA",
-        "projectPath": "C:\\Users\\user\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj",
-        "packagesPath": "C:\\Users\\user\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\user\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\obj\\",
+        "projectPath": "C:\\Users\\User\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\SoA.csproj",
+        "packagesPath": "C:\\Users\\User\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\User\\Documents\\My Games\\Terraria\\tModLoader\\ModSources\\SoA\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "C:\\Users\\user\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\User\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
@@ -42,12 +42,6 @@
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
-          "dependencies": {
-            "tModLoader.CodeAssist": {
-              "target": "Package",
-              "version": "[0.1.*, )"
-            }
-          },
           "imports": [
             "net461",
             "net462",
@@ -64,7 +58,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.408/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.411/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

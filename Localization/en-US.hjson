@@ -8,12 +8,50 @@ Mods: {
 
 			Aquasaw: {
 				DisplayName: Aquasaw
-				Tooltip: With 30% chance can apply crumble effect
+				Tooltip:
+					'''
+					A water-driven chainsaw of the forgotten tides
+					Deals 25% more damage to enemies soaked in liquid
+					'''
 			}
 
 			LavaShard: {
-				DisplayName: Lava Shard
-				Tooltip: Pulsing lava
+				DisplayName: Essentia of lava
+				Tooltip: Pulsing shard
+			}
+
+			DarkLumen: {
+				DisplayName: Dark Lumen
+				Tooltip: Glowing ichor of a shadow jelly
+			}
+
+			LanternfinQuestFish: {
+				DisplayName: Lanternfin
+				Tooltip:
+					'''
+					{$CommonItemTooltip.QuestItem}
+					A fish that carries its own light through the black tide
+					'''
+				QuestDescription:
+					'''
+					I saw a light under the dark water where no light should be! They call it the Lanternfin.
+					It swims in that shadowy tide near the jungle-side ocean. Bring it to me... alive and glowing!
+					'''
+				QuestCatchLocation: Caught in the Tide of Shadows.
+			}
+
+			ShadowSnapper: {
+				DisplayName: Shadow Snapper
+				Tooltip: Tastes like midnight
+			}
+
+			PlanktonWispItem: {
+				DisplayName: Plankton Wisp
+				Tooltip:
+					'''
+					Faintly lights the way
+					Fish seem drawn to it
+					'''
 			}
 
 			CurseOfMe: {
@@ -23,21 +61,26 @@ Mods: {
 					Decrease Player regeneration by 3
 					If Player get damaged by enemy or projectile fire 5 projectile 
 					Damage from projectiles based on Player magic damage
+					Spookie
 					'''
 			}
 
 			InfernoShuriken: {
 				DisplayName: Inferno Shuriken
-				Tooltip: Explodes on impact, dealing area damage and igniting enemies.
+				Tooltip:
+					'''
+					Bounces and Explodes on impact, dealing area damage and igniting enemies.
+					Hold attack to charge the shuriken. Releasing at the perfect moment causes it to fly straight and deal increased damage.
+					'''
 			}
 
 			ClawsOfLavaShadow: {
-				DisplayName: Claws of lava spreading
+				DisplayName: Lava claw
 				Tooltip:
 					'''
 					Mark an enemy that accumulates damage with each hit, and explodes if you stop dealing damage
 					Right click for small dash with immunity frames(Cooldown 2 sec)
-					uff too hot
+					Ouch, too hot
 					'''
 			}
 
@@ -46,19 +89,52 @@ Mods: {
 				Tooltip: Sand of Forgotten ocean
 			}
 
+			Tidestone: {
+				DisplayName: Tidestone
+				Tooltip: Bedrock of the Forgotten ocean
+			}
+
+			StructureWand: {
+				DisplayName: Structure Wand
+				Tooltip:
+					'''
+					Dev tool: saves a chunk of the world into a structure file
+					Click two corners of an area to export it
+					Right click to reset the first corner
+					'''
+			}
+
 			Ttorch: {
-				DisplayName: Ttorch
-				Tooltip: Work underwater
+				DisplayName: Tidetorch
+				Tooltip: Works underwater
+			}
+
+			Tcampfire: {
+				DisplayName: Tide Campfire
+				Tooltip:
+					'''
+					Grants the Cozy Fire buff
+					Keeps burning even underwater
+					Right click to extinguish or relight
+					'''
 			}
 
 			ShardedSpear: {
 				DisplayName: Spear of Waves
-				Tooltip: Rare treasure
+				Tooltip: Fire laser beam
 			}
 
-			StaffOfTornado: {
-				DisplayName: Staff Of Tornado
-				Tooltip: ""
+			ScytheOfFireStorm: {
+				DisplayName: Scythe of Fire Storm
+				Tooltip:
+					'''
+					Hold to wind up the scythe behind your back
+					When the blade ignites, release to unleash a blazing tornado
+					The tornado travels forward, pulling enemies in and setting them ablaze
+					Charging increases its size, range and damage
+					Launching a third tornado snuffs out the oldest one
+					Touching water turns the vortex into a scalding steam geyser that hurls enemies skyward
+					'''
 			}
 
 			FlinxHood: {
@@ -70,6 +146,71 @@ Mods: {
 				DisplayName: Flinx Hood
 				Tooltip: Increases summon damage by 5%
 			}
+
+			HaloOfBreathing: {
+				DisplayName: Halo Of Breathing
+				Tooltip:
+					'''
+					Grants the ability to breathe and swim freely while submerged in deep water
+					The halo glows when active
+					'''
+			}
+
+			HellStar: {
+				Tooltip: ""
+				DisplayName: Hell Star
+			}
+
+			RoyalClaw: {
+				DisplayName: Royal Claw
+				Tooltip: A claw fit for a king. Surely someone can forge something out of this.
+			}
+
+			CrabRoyalBait: {
+				DisplayName: Royal Bait
+				Tooltip:
+					'''
+					A royal offering
+					Right click the Royal Tide Altar in the sunken galleon
+					with this in your inventory to summon the King Crab
+					'''
+			}
+
+			AbyssArrow: {
+				DisplayName: Abyss Arrow
+				Tooltip:
+					'''
+					Slices through water without losing speed
+					Deals 20% more damage to enemies soaked in liquid
+					'''
+			}
+
+			RoyalTrident: {
+				DisplayName: Royal Trident
+				Tooltip:
+					'''
+					The tyrant's claw, reforged into three points
+					Deals 25% more damage to enemies soaked in liquid
+					'''
+			}
+
+			TideskimmerBoots: {
+				DisplayName: Tideskimmer Boots
+				Tooltip:
+					'''
+					Grants the ability to walk on water
+					Increased movement speed on sand
+					'''
+			}
+
+			CrabRoyalAltar: {
+				DisplayName: Royal Tide Altar
+				Tooltip:
+					'''
+					The drowned throne of the King Crab
+					Right click with a Royal Bait in your inventory to call the tyrant of the tides
+					'''
+			}
 		}
 
 		Projectiles: {
@@ -78,20 +219,81 @@ Mods: {
 			InfernoShurikenProjectile.DisplayName: Inferno Shuriken Projectile
 			ShardedSpearBeam.DisplayName: Sharded Spear Beam
 			ShardedSpearProjectile.DisplayName: Sharded Spear Projectile
+			ShardedSpearHoldout.DisplayName: Sharded Spear Holdout
+			ShardedSpearLaserBeam.DisplayName: Sharded Spear Laser Beam
+			CursedExplosion.DisplayName: Cursed Explosion
+			KingCrabShockwave.DisplayName: Crushing Wave
+			KingCrabBubble.DisplayName: Royal Bubble
+			FireTornadoProjectile.DisplayName: Lava Maelstrom
+			TidesandBallFalling.DisplayName: Tidesand Ball
+			AbyssArrowProjectile.DisplayName: Abyss Arrow
+			RoyalTridentProjectile.DisplayName: Royal Trident
+			KingCrabWave.DisplayName: King Crab Wave
 		}
 
 		Buffs: {
-			CoM_debaff: {
-				DisplayName: Cursed Reload
-				Description: Waiting...
+			CoMDebuff: {
+				DisplayName: Hollofication
+				Description: Reloading...
 			}
 
 			LavaExplosionDebuff: {
 				DisplayName: Marked
-				Description: 1..2..3..Oh whait 1..BOOM
+				Description: 1..2.. Oh wait.. BOOMMM
+			}
+
+			HellFireDebuff: {
+				DisplayName: Hellfire
+				Description: Burning intensely and slowed by 25%
 			}
 		}
 
-		NPCs.Eel.DisplayName: Eel
+		Biomes: {
+			TideOfShadowsBiome: {
+				DisplayName: Tide of Shadows
+				TownNPCDialogueName: the Tide Of Shadows Biome
+			}
+		}
+
+		Tiles: {
+			Ttorch_tile.MapEntry: Tide Torch
+			Tcampfire_tile.MapEntry: Tide Campfire
+			Tidesand_tile.MapEntry: Tidesand
+			Tidestone_tile.MapEntry: Tidestone
+			CrabRoyalAltar_tile.MapEntry: Royal Tide Altar
+			ShadowCoral_tile.MapEntry: Shadow Coral
+			GlowShell_tile.MapEntry: Glowing Shell
+		}
+
+		Misc.AltarNeedsBait: The altar hungers for a royal offering...
+
+		NPCs: {
+			CrabKnight.DisplayName: Crab Knight
+
+			Eel: {
+				DisplayName: Eel
+				Bestiary: A lightning-quick hunter of the shadowed tide. It coils in the dark water, waiting for a spark of movement.
+			}
+
+			TideCrab: {
+				DisplayName: Tide Crab
+				Bestiary: A small scavenger of the shadowed shore. Its shell has darkened to match the dunes it calls home.
+			}
+
+			ShadowJelly: {
+				DisplayName: Shadow Jelly
+				Bestiary: It drifts through the black water like a sunken lantern. Its glowing ichor is prized by those who dare the tide.
+			}
+
+			PlanktonWisp: {
+				DisplayName: Plankton Wisp
+				Bestiary: A cloud of luminous plankton dancing above the waves. Sailors once mistook them for the souls of the drowned.
+			}
+
+			King_crab: {
+				DisplayName: King Crab
+				Bestiary: The tyrant of the forgotten shores. Its cracked crown has ruled the tides since before the seas had names.
+			}
+		}
 	}
 }
