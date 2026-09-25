@@ -7,6 +7,7 @@ using Terraria.Audio;
 using Terraria.Graphics.Shaders;
 using Terraria.ID;
 using Terraria.ModLoader;
+using SoA.Common.Graphics;
 using SoA.Content.Buffs;
 
 namespace SoA.Content.Projectiles
@@ -331,7 +332,7 @@ namespace SoA.Content.Projectiles
 
         public override bool PreDraw(ref Color lightColor)
         {
-            Texture2D quadTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/BeamDistortion").Value;
+            Texture2D quadTex = SoAVfx.Quad;
             Texture2D noiseTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/WaveNoise").Value;
             Vector2 pos = VortexCenter - Main.screenPosition;
 

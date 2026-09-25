@@ -233,16 +233,17 @@ Mods: {
 			}
 
 			RoyalSpear: {
-				// DisplayName: Royal Trident
-				/* Tooltip:
+				DisplayName: Королевская Регалия
+				Tooltip:
 					'''
-					Soaks enemies; soaked targets take 25% more damage, swings faster underwater
-					Left click unleashes a fan of three rapid thrusts
-					Hold right click to charge a faster, stronger, farther throw.
-					Thrown trident creates a geyser, rides pierced enemies, and deals water damage.
-					Right click recalls it.
-					Damage fills the tide meter. Full meter makes the throw pull you to the trident, triggering a tidal burst on landing.
-					''' */
+					Удары промачивают врагов; промокшие получают на 25% больше урона. Под водой атакует быстрее
+					Клик — укол, взмах и тяжёлый выпад
+					Зажмите, чтобы подготовить шквал уколов: чем дольше держите, тем больше ударов
+					Зажмите ПКМ, чтобы зарядить бросок. Копьё остаётся там, куда воткнулось
+					Подойдите к воткнутому копью, чтобы забрать его, или держите ПКМ, чтобы пересобрать его из песка
+					Урон наполняет шкалу прилива. С полной шкалой ПКМ становится приливным рывком:
+					вы проноситесь к точке над курсором и пикируете вниз вместе с копьём, оглушая цель
+					'''
 			}
 
 			TideskimmerBoots: {
@@ -309,14 +310,14 @@ Mods: {
 			// FireTornadoProjectile.DisplayName: Lava Maelstrom
 			// TidesandBallFalling.DisplayName: Tidesand Ball
 			// AbyssArrowProjectile.DisplayName: Abyss Arrow
-			// RoyalSpearProjectile.DisplayName: Royal Trident
-			// RoyalSpearThrown.DisplayName: Royal Trident
-			// RoyalTideWave.DisplayName: Royal Tide
-			// RoyalTideBurst.DisplayName: Tidal Burst
+			RoyalSpearProjectile.DisplayName: Королевская Регалия
+			RoyalSpearThrown.DisplayName: Королевская Регалия
 			// KingCrabWave.DisplayName: King Crab Wave
 			// TideBobber.DisplayName: Tidecaller Bobber
-			// RoyalSpearCharge.DisplayName: Royal Spear Charge
-			// RoyalSpearReforge.DisplayName: Royal Spear Reforge
+			RoyalSpearCharge.DisplayName: Королевская Регалия
+			RoyalSpearReforge.DisplayName: Королевская Регалия
+			RoyalSpearFlurry.DisplayName: Королевская Регалия
+			RoyalSpearDashTrail.DisplayName: Королевская Регалия
 		}
 
 		Buffs: {
@@ -338,6 +339,11 @@ Mods: {
 			CrushingPressureDebuff: {
 				// DisplayName: Crushing Pressure
 				// Description: The depth is squeezing the life out of you — rise, or seal the pressure out
+			}
+
+			TideStunDebuff: {
+				// DisplayName: Tide Stun Debuff
+				// Description: Mods.SoA.Buffs.TideStunDebuff.Description
 			}
 		}
 

@@ -11,17 +11,17 @@ using SoA.Content.Items.Placebles;
 
 namespace SoA.Content.Items.Weapons
 {
-    // Апгрейд ванильного трезубца клешнёй Короля-краба.
-    // Спрайт — ванильный Trident (placeholder до собственного арта).
+    // Апгрейд ванильного трезубца клешнёй Короля-краба — выходит копьё.
     //
-    // ЛКМ — быстрая связка: три укола веером внутри одной анимации, по одному
-    // каждые StabUseTime тиков (схема ванильного Piercing Starlight: useAnimation
-    // кратен useTime, и ванилла сама стреляет несколько раз за одно нажатие).
+    // ЛКМ — всё решает RoyalSpearFlurry: клик даёт связку «укол, взмах, тяжёлый
+    // выпад», зажатие копит шквал частых уколов (чем дольше держал, тем больше
+    // ударов), отпускание его выпускает.
     // ПКМ — бросок с замахом: копьё копит силу, пока кнопка зажата, и на отпускании
-    // уходит тем дальше и больнее, чем дольше держали. Втыкается, поднимает гейзер и
-    // остаётся там: пока за ним не придут ногами, оружия у игрока нет.
-    // Если идти лень — зажатая ПКМ пересобирает воткнутое копьё песком прямо в руке,
-    // но медленно и без заряда (RoyalSpearReforge).
+    // уходит тем дальше и больнее, чем дольше держали. Втыкается и остаётся там: пока
+    // за ним не придут, оружия у игрока нет. Зажатая ПКМ пересобирает воткнутое копьё
+    // песком прямо в руке (RoyalSpearReforge).
+    // Полная шкала прилива превращает ПКМ в приливный рывок: игрок проносится к точке
+    // над курсором, копьё бьёт вниз и оглушает цель, игрок пикирует следом.
     //
     // Снаряды копья лежат в Content/Projectiles/RoyalSpear, состояние игрока — в
     // Common/Players/RoyalSpear.
@@ -30,15 +30,9 @@ namespace SoA.Content.Items.Weapons
     [LegacyName("RoyalTrident")]
     public class RoyalSpear : ModItem
     {
-        // Тиков между уколами связки. Вся анимация — StabUseTime * ComboLength,
-        // именно из этой кратности ванилла и делает три удара за одно нажатие
-        private const int StabUseTime = 8;
-
-        // Веер: каждый укол уходит под своим углом, радиан. Последний бьёт прямо
-        private static readonly float[] StepAim = { 0.12f, -0.12f, 0f };
-
-        // Разброс прицела на один удар: связка не должна выглядеть штамповкой
-        private const float AimJitter = 0.045f;
+        // Анимация ЛКМ только запускает контроллер: дальше он сам держит предмет
+        // занятым, пока не отработает последний удар
+        private const int StrikeUseTime = 12;
 
         // Замах ПКМ длится ровно столько, сколько игрок держит кнопку, поэтому анимация
         // короткая: она только запускает канал, дальше всё считает RoyalSpearCharge
@@ -53,17 +47,20 @@ namespace SoA.Content.Items.Weapons
             Item.DamageType = DamageClass.Melee;
             Item.width = 32;
             Item.height = 32;
-            Item.useTime = StabUseTime;
-            Item.useAnimation = StabUseTime * RoyalSpearPlayer.ComboLength;
+            Item.useTime = Item.useAnimation = StrikeUseTime;
             Item.useStyle = ItemUseStyleID.Shoot;
             Item.knockBack = 5.5f;
+
+            // Копьё бьёт сериями мелких ударов, и защита врага вычитается из каждого:
+            // без пробития шквал по бронированной цели терял почти половину урона
+            Item.ArmorPenetration = 10;
             Item.value = Item.sellPrice(gold: 1, silver: 50);
             Item.rare = ItemRarityID.Green;
-            Item.UseSound = SoundID.Item1;
-            Item.autoReuse = true;
+            Item.UseSound = null; // звук даёт каждый удар сам
+            Item.channel = true;
             Item.noMelee = true;
             Item.noUseGraphic = true;
-            Item.shoot = ModContent.ProjectileType<RoyalSpearProjectile>();
+            Item.shoot = ModContent.ProjectileType<RoyalSpearFlurry>();
             Item.shootSpeed = 3.5f;
         }
 
@@ -71,6 +68,10 @@ namespace SoA.Content.Items.Weapons
 
         public override bool CanUseItem(Player player)
         {
+            // Посреди приливного рывка руки заняты — копьё летит впереди игрока
+            if (player.GetModPlayer<RoyalSpearPlayer>().Dashing)
+                return false;
+
             if (player.altFunctionUse == 2)
             {
                 Item.useStyle = ItemUseStyleID.Swing;
@@ -79,9 +80,10 @@ namespace SoA.Content.Items.Weapons
                 Item.channel = true;
                 Item.autoReuse = false;
 
-                // Замах или пересборка уже идут — второе нажатие ничего не начинает
+                // Замах, пересборка или серия ЛКМ уже идут — второе нажатие ничего не начинает
                 if (player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearCharge>()] > 0
-                    || player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearReforge>()] > 0)
+                    || player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearReforge>()] > 0
+                    || player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearFlurry>()] > 0)
                     return false;
 
                 // Копьё в мире: бросать нечего, но воткнутое можно собрать песком в руке.
@@ -92,28 +94,23 @@ namespace SoA.Content.Items.Weapons
                 return true;
             }
 
-            Item.channel = false;
-            Item.autoReuse = false; // одно нажатие — одна связка, как у Starlight
+            Item.channel = true;
+            Item.autoReuse = false; // одно нажатие — одна серия
 
-            // Трезубец воткнут где-то в мире или лежит в замахе — колоть нечем
+            // Копьё воткнуто где-то в мире или лежит в замахе — колоть нечем
             if (player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearThrown>()] > 0
-                || player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearCharge>()] > 0)
+                || player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearCharge>()] > 0
+                || player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearReforge>()] > 0)
                 return false;
 
             Item.useStyle = ItemUseStyleID.Shoot;
-            Item.useTime = StabUseTime;
-            Item.useAnimation = StabUseTime * RoyalSpearPlayer.ComboLength;
-            Item.UseSound = null; // ванилла звучала бы раз на связку, звук даёт каждый укол
+            Item.useTime = Item.useAnimation = StrikeUseTime;
+            Item.UseSound = null;
 
-            // CanUseItem зовётся только на старте анимации (ванилла проверяет
-            // itemAnimation == 0), так что связка отсчитывается ровно от нуля
-            player.GetModPlayer<RoyalSpearPlayer>().ResetCombo();
-
-            // Больше связки уколов одновременно не бывает
-            return player.ownedProjectileCounts[Item.shoot] < RoyalSpearPlayer.ComboLength;
+            return player.ownedProjectileCounts[ModContent.ProjectileType<RoyalSpearFlurry>()] == 0;
         }
 
-        // В воде трезубец у себя дома
+        // В воде копьё у себя дома
         public override float UseSpeedMultiplier(Player player)
         {
             return player.wet && !player.lavaWet && !player.honeyWet ? WetUseSpeedMultiplier : 1f;
@@ -143,19 +140,7 @@ namespace SoA.Content.Items.Weapons
                 return false;
             }
 
-            int step = player.GetModPlayer<RoyalSpearPlayer>().AdvanceCombo();
-
-            // Рандом бросаем один раз здесь: Shoot идёт на клиенте бьющего, и значение
-            // уезжает в ai вместе с пакетом создания. Кинь его в снаряде — у каждого
-            // клиента копьё махало бы по-своему, мимо собственного хитбокса
-            float variance = Main.rand.NextFloat(-1f, 1f);
-            Vector2 stabAim = velocity.RotatedBy(StepAim[step] + variance * AimJitter);
-
-            SoundEngine.PlaySound(
-                SoundID.Item1 with { Volume = 0.75f, Pitch = 0.12f * step }, player.Center);
-
-            Projectile.NewProjectile(source, position, stabAim, type, damage, knockback,
-                player.whoAmI, step, variance);
+            Projectile.NewProjectile(source, player.MountedCenter, aim, type, damage, knockback, player.whoAmI);
             return false;
         }
 

@@ -148,7 +148,7 @@ namespace SoA.Content.Projectiles
                 pop.Shader.Parameters["uProgress"]?.SetValue(PopTimer / PopTicks);
                 pop.Shader.Parameters["uSeed"]?.SetValue(seed);
                 pop.Apply();
-                Texture2D blob = SoAVfx.Blob;
+                Texture2D blob = SoAVfx.Quad;
                 float popSize = Projectile.width * 4f;
                 Main.EntitySpriteDraw(blob, Projectile.Center - Main.screenPosition, null, Color.White, 0f,
                     blob.Size() / 2f, new Vector2(popSize / blob.Width, popSize / blob.Height), SpriteEffects.None, 0);
@@ -178,7 +178,7 @@ namespace SoA.Content.Projectiles
             bubble.UseOpacity(1f);
             bubble.Shader.Parameters["uSeed"]?.SetValue(seed);
             bubble.Apply();
-            Texture2D tex = SoAVfx.Blob;
+            Texture2D tex = SoAVfx.Quad;
             float size = Projectile.width * 2.6f;
             Main.EntitySpriteDraw(tex, Projectile.Center - Main.screenPosition, null, Color.White, 0f,
                 tex.Size() / 2f, new Vector2(size / tex.Width, size / tex.Height), SpriteEffects.None, 0);

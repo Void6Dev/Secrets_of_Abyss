@@ -1,5 +1,6 @@
 using Terraria;
 using Terraria.ModLoader;
+using SoA.Common.Graphics;
 using Terraria.ID;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -78,7 +79,7 @@ namespace SoA.Content.Projectiles
             Vector2 origin = texture.Size() / 2;
             int len = Projectile.oldPos.Length;
 
-            Texture2D blobTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/BeamDistortion").Value;
+            Texture2D blobTex = SoAVfx.Quad;
             Texture2D noiseTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/WaveNoise").Value;
             Vector2 blobOrigin = blobTex.Size() / 2f;
 
@@ -251,7 +252,7 @@ namespace SoA.Content.Projectiles
 
         public override bool PreDraw(ref Color lightColor)
         {
-            Texture2D quadTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/BeamDistortion").Value;
+            Texture2D quadTex = SoAVfx.Quad;
             Texture2D noiseTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/WaveNoise").Value;
             Vector2 pos = Projectile.Center - Main.screenPosition;
 

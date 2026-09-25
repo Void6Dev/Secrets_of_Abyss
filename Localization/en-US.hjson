@@ -233,15 +233,16 @@ Mods: {
 			}
 
 			RoyalSpear: {
-				DisplayName: Royal Trident
+				DisplayName: Royal Regalia
 				Tooltip:
 					'''
-					Soaks enemies; soaked targets take 25% more damage, swings faster underwater
-					Left click unleashes a fan of three rapid thrusts
-					Hold right click to charge a faster, stronger, farther throw.
-					Thrown trident creates a geyser, rides pierced enemies, and deals water damage.
-					Right click recalls it.
-					Damage fills the tide meter. Full meter makes the throw pull you to the trident, triggering a tidal burst on landing.
+					Hits soak enemies; soaked enemies take 25% more damage. Attacks faster underwater
+					Click to strike with a thrust, a sweep and a heavy lunge
+					Hold to wind up a flurry of thrusts: the longer you hold, the more strikes
+					Hold right click to charge a throw. The spear stays where it lands
+					Walk up to the planted spear to take it back, or hold right click to reforge it from sand
+					Damage fills the tide meter. With a full meter, right click becomes a tidal dash:
+					you dash above the cursor and dive down with the spear, stunning its target
 					'''
 			}
 
@@ -309,14 +310,14 @@ Mods: {
 			FireTornadoProjectile.DisplayName: Lava Maelstrom
 			TidesandBallFalling.DisplayName: Tidesand Ball
 			AbyssArrowProjectile.DisplayName: Abyss Arrow
-			RoyalSpearProjectile.DisplayName: Royal Trident
-			RoyalSpearThrown.DisplayName: Royal Trident
-			RoyalTideWave.DisplayName: Royal Tide
-			RoyalTideBurst.DisplayName: Tidal Burst
+			RoyalSpearProjectile.DisplayName: Royal Regalia
+			RoyalSpearThrown.DisplayName: Royal Regalia
 			KingCrabWave.DisplayName: King Crab Wave
 			TideBobber.DisplayName: Tidecaller Bobber
-			RoyalSpearCharge.DisplayName: Royal Spear Charge
-			RoyalSpearReforge.DisplayName: Royal Spear Reforge
+			RoyalSpearCharge.DisplayName: Royal Regalia
+			RoyalSpearReforge.DisplayName: Royal Regalia
+			RoyalSpearFlurry.DisplayName: Royal Regalia
+			RoyalSpearDashTrail.DisplayName: Royal Regalia
 		}
 
 		Buffs: {
@@ -338,6 +339,11 @@ Mods: {
 			CrushingPressureDebuff: {
 				DisplayName: Crushing Pressure
 				Description: The depth is squeezing the life out of you — rise, or seal the pressure out
+			}
+
+			TideStunDebuff: {
+				DisplayName: Tide Stun Debuff
+				Description: Mods.SoA.Buffs.TideStunDebuff.Description
 			}
 		}
 

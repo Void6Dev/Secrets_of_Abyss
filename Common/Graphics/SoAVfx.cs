@@ -15,10 +15,64 @@ namespace SoA.Common.Graphics
     {
         private static Asset<Texture2D> _blob;
         private static Asset<Texture2D> _noise;
+        private static Asset<Texture2D> _softGlow;
+        private static Asset<Texture2D> _softStreak;
+        private static Asset<Texture2D> _trailNoise;
+        private static bool _softGlowChecked;
+        private static bool _softStreakChecked;
+        private static bool _trailNoiseChecked;
+        private static Texture2D _quad;
 
-        // Мягкий круглый блоб — база для свечения/колец/трейлов
+        // BeamDistortion.png — звезда-вспышка с лучами, а НЕ мягкое пятно. Раньше ею
+        // рисовалось любое свечение, отсюда колючий вид эффектов. Теперь она нужна только
+        // там, где вспышка задумана (аура SoA:CrabAura крутит именно её, луч Sharded Spear)
+        // и как запасной вариант, пока нет текстур из Docs/SpriteSpecs.md, раздел «VFX».
         public static Texture2D Blob =>
             (_blob ??= ModContent.Request<Texture2D>("SoA/Assets/Textures/BeamDistortion", AssetRequestMode.ImmediateLoad)).Value;
+
+        // Мягкое круглое пятно — свечения, капли, ореолы (DrawTintedGlow)
+        public static Texture2D SoftGlow =>
+            LoadOptional(ref _softGlow, ref _softGlowChecked, "SoA/Assets/Textures/Vfx/SoftGlow");
+
+        // Мягкий вытянутый штрих — линии, блики, ореол древка, дуги (DrawTintedQuad, DrawTravellingArcs)
+        public static Texture2D SoftStreak =>
+            LoadOptional(ref _softStreak, ref _softStreakChecked, "SoA/Assets/Textures/Vfx/SoftStreak");
+
+        // Шум ленты SoATrail: горизонтальные струи, бесшовный. Серым по чёрному — шейдер
+        // читает яркость. Без файла лента берёт общий WaveNoise
+        public static Texture2D TrailNoise =>
+            LoadOptional(ref _trailNoise, ref _trailNoiseChecked, "SoA/Assets/Textures/Vfx/TrailNoise", Noise);
+
+        // Белый квад для шейдеров с процедурной формой: они текстуру не читают, им нужна
+        // только геометрия с uv 0..1 на всю площадь. Создаётся кодом — рисовать тут нечего.
+        // MagicPixel не годится: у него uv не на всю текстуру (см. память про source rect)
+        public static Texture2D Quad
+        {
+            get
+            {
+                if (_quad == null || _quad.IsDisposed)
+                {
+                    _quad = new Texture2D(Main.graphics.GraphicsDevice, 4, 4);
+                    Color[] white = new Color[16];
+                    System.Array.Fill(white, Color.White);
+                    _quad.SetData(white);
+                }
+                return _quad;
+            }
+        }
+
+        // Текстура, которую пользователь ещё может не нарисовать: пока файла нет, рисуем
+        // старой звездой, чтобы эффект не пропал. Проверяем один раз за загрузку мода
+        private static Texture2D LoadOptional(ref Asset<Texture2D> asset, ref bool checkedOnce, string path,
+            Texture2D fallback = null)
+        {
+            if (!checkedOnce)
+            {
+                checkedOnce = true;
+                ModContent.RequestIfExists(path, out asset, AssetRequestMode.ImmediateLoad);
+            }
+            return asset?.Value ?? fallback ?? Blob;
+        }
 
         public static Texture2D Noise =>
             (_noise ??= ModContent.Request<Texture2D>("SoA/Assets/Textures/WaveNoise", AssetRequestMode.ImmediateLoad)).Value;
@@ -86,7 +140,7 @@ namespace SoA.Common.Graphics
         // (напр. красный пульс «треснувшего панциря»). Вызывать внутри BeginAdditive/EndAdditive.
         public static void DrawTintedGlow(SpriteBatch sb, Vector2 worldPos, Vector2 sizePx, Color color)
         {
-            Texture2D tex = Blob;
+            Texture2D tex = SoftGlow;
             Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, color, 0f,
                 tex.Size() / 2f, new Vector2(sizePx.X / tex.Width, sizePx.Y / tex.Height), SpriteEffects.None, 0);
         }
@@ -96,7 +150,7 @@ namespace SoA.Common.Graphics
         // непрозрачную форму, цвет с A=0 — аддитивное свечение.
         public static void DrawTintedQuad(SpriteBatch sb, Vector2 worldPos, Vector2 sizePx, float rotation, Color color)
         {
-            Texture2D tex = Blob;
+            Texture2D tex = SoftStreak;
             Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, color, rotation,
                 tex.Size() / 2f, new Vector2(sizePx.X / tex.Width, sizePx.Y / tex.Height), SpriteEffects.None, 0);
         }
@@ -122,7 +176,7 @@ namespace SoA.Common.Graphics
             shader.Shader.Parameters["uProgress"]?.SetValue(progress);
             shader.Shader.Parameters["uBlend"]?.SetValue(blend);
             shader.Apply();
-            Texture2D tex = Blob;
+            Texture2D tex = Quad; // RingPass текстуру не читает
             Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, Color.White, 0f,
                 tex.Size() / 2f, new Vector2(sizePx / tex.Width, sizePx / tex.Height), SpriteEffects.None, 0);
         }
@@ -139,7 +193,7 @@ namespace SoA.Common.Graphics
             rush.Shader.Parameters["uProgress"]?.SetValue(intensity);
             rush.Apply();
 
-            Texture2D tex = Blob;
+            Texture2D tex = Quad; // RushPass текстуру не читает
             Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, Color.White, rotation,
                 tex.Size() / 2f, new Vector2(lengthPx / tex.Width, widthPx / tex.Height),
                 SpriteEffects.None, 0);
@@ -157,7 +211,7 @@ namespace SoA.Common.Graphics
 
             Vector2 axis = rotation.ToRotationVector2();
             Vector2 normal = new(-axis.Y, axis.X);
-            Texture2D tex = Blob;
+            Texture2D tex = SoftStreak;
 
             for (int side = -1; side <= 1; side += 2)
             {

@@ -136,7 +136,7 @@ namespace SoA.Common.Graphics
             shader.Apply();
             SoAVfx.BindNoise();
 
-            Texture2D quad = SoAVfx.Blob;
+            Texture2D quad = SoAVfx.Quad; // процедурные проходы текстуру не читают
             Vector2 center = screen + new Vector2(0f, (0.5f - ground) * sizePx.Y);
             Main.EntitySpriteDraw(quad, center, null, Color.White, 0f, quad.Size() / 2f,
                 new Vector2(sizePx.X / quad.Width, sizePx.Y / quad.Height), SpriteEffects.None, 0);

@@ -10,63 +10,49 @@ using Terraria.ModLoader;
 using SoA.Common.Graphics;
 using SoA.Common.Players;
 using SoA.Common.Utils;
+using SoA.Content.Buffs;
 
 namespace SoA.Content.Projectiles
 {
-    // Бросок Королевского трезубца (ПКМ). Летит по дуге и остаётся там, куда воткнулся,
-    // пока игрок не подойдёт и не выдернет его руками — притянуть копьё издалека нельзя.
+    // Бросок Королевского копья (ПКМ). Летит по дуге и остаётся там, куда воткнулось.
+    // Вернуть его можно двумя путями: подойти и выдернуть руками или, держа ПКМ,
+    // пересобрать песком прямо в руке (RoyalSpearReforge).
     // Фазы через ai[0]:
     //   0 — полёт по дуге: втыкается в первую цель или в тайл
-    //   1 — гейзер: столб воды от точки удара, бьёт по площади
-    //   2 — возврат: прыгает в руку с расстояния вытянутой руки, пойманный трезубец
-    //       сразу заряжен на королевский выпад
-    //   3 — стоит воткнутым и ждёт, когда за ним придут
-    // Пока трезубец не в руке, выпад недоступен — оружия у игрока буквально нет.
+    //   1 — стоит воткнутым: едет на цели и режет её, ждёт, когда за ним придут
+    //   2 — возврат: прыгает в руку с расстояния вытянутой руки
+    // Пока копьё не в руке, ЛКМ недоступна — оружия у игрока буквально нет.
     //
-    // На полной шкале приливного удара бросок идёт в режиме «крюка» (_slam): трезубец
-    // тянет игрока за собой на водяной верёвке, а приземление игрока рвёт взрывом
-    // (это уже забота RoyalSpearPlayer — он один знает, когда игрок коснулся земли).
+    // Приливный рывок (полная шкала): копьё запускается сверху, с точки, куда
+    // долетел рывок игрока (RoyalSpearPlayer.LaunchDive), и оглушает цель, в которую вошло.
     public class RoyalSpearThrown : ModProjectile
     {
         private const float PhaseFlight = 0f;
-        private const float PhaseGeyser = 1f;
+        private const float PhaseAnchored = 1f;
         private const float PhaseReturn = 2f;
-        private const float PhaseAnchored = 3f;
 
-        // 8 кадров листа раскладываются на всю жизнь гейзера: подъём, пик, спад
-        private const int GeyserTicks = 64;
         private const int AnchoredTicks = 1800;
         private const int CatchRadius = 28;
 
         // На таком расстоянии игрок дотягивается до древка и выдёргивает копьё.
         // Меньше половины ширины экрана быть обязано: это подбор, а не притягивание
-        private const float PickupRadius = 44f;
+        private const float PickupRadius = 64f;
 
         // Копьё, брошенное и забытое за краем экрана, растворяется само: иначе игрок,
         // закинувший его в лаву или за спину боссу, остаётся без оружия навсегда
         private const float AbandonDistance = 1400f;
 
-        // Отпущенная пересборка возвращает песок не мгновенно — за ~25 тиков
+        // Отпущенная пересборка возвращает песок не мгновенно — за ~12 тиков
         private const float ReforgeRestoreSpeed = 0.08f;
 
-        private const int FlightWidth = 20;
-        private const int FlightHeight = 20;
-        private const int GeyserWidth = 46;
-        private const int GeyserHeight = 104;
-        private const float GeyserBaseOffset = 10f;
-
-        // Спрайт струи шире хитбокса: пена и капли на листе выходят за колонну урона
-        private const float JetDrawWidth = 1.5f;
-
-        // Устье рисуется ниже точки входа: копьё вошло в грунт остриём, а вода бьёт
-        // из-под него, а не из середины древка
-        private const float GeyserVisualDrop = 10f;
+        private const int SpearWidth = 20;
+        private const int SpearHeight = 20;
 
         // Дуга пологая: брошенное копьё должно доставать через экран, а не втыкаться
         // под ноги. Разгон гасит просадку ещё сильнее — быстрый бросок летит почти прямо
         private const float FlightGravity = 0.11f;
         private const float FlightMaxFall = 14f;
-        private const float SlamGravity = 0.05f; // крюк летит дальше: дугу распрямляем
+        private const float SlamGravity = 0.05f; // удар сверху идёт почти по прямой
 
         // Насколько скорость выпрямляет дугу: на пороге шлейфа гравитация уже вдвое слабее
         private const float SpeedGravityRelief = 0.55f;
@@ -80,19 +66,9 @@ namespace SoA.Content.Projectiles
         private const float ArcLength = 78f;
         private const float ArcBow = 13f;
 
-        private const float ReturnAccel = 1.4f;
-        private const float ReturnMaxSpeed = 17f;
-
-        // Верёвка: считается натянутой, когда копьё отлетело на TetherEngageDistance.
-        // Пока не натянулась — игрока не трогаем вообще, иначе тяга включалась бы в тот
-        // же тик, когда трезубец ещё в руке.
-        private const float TetherEngageDistance = 100f;
-        private const float JoltSpeed = 10f;
-        private const float ReelSpeed = 1.4f;
-        private const float TensionAccel = 1.15f;
-        private const float MaxRideSpeed = 22f;
-        private const float PullStopDistance = 56f;
-        private const int TetherSegments = 14;
+        // Возврат в руку быстрый: копьё уже у игрока под рукой, ждать нечего
+        private const float ReturnAccel = 3f;
+        private const float ReturnMaxSpeed = 28f;
 
         private const float PlantTilt = 0.35f;
 
@@ -100,14 +76,13 @@ namespace SoA.Content.Projectiles
         // движением не набирает никто, так что ложных срабатываний быть не должно
         private const float TeleportJump = 120f;
 
-        private const float GeyserDamageMultiplier = 0.55f;
         private const float ReturnDamageMultiplier = 0.8f;
         private const float StuckDamageMultiplier = 0.4f;
-        private const float SoakedDamageMultiplier = 1.25f;
 
+        // Бросок приливного рывка: оглушает цель, в которую вошёл
         private bool slam;
 
-        // Куда воткнулся: -1 — в грунт, иначе индекс NPC и смещение от его центра.
+        // Куда воткнулось: -1 — в грунт, иначе индекс NPC и смещение от его центра.
         // Ездит в ExtraAI, потому что следовать за целью должны все клиенты.
         private int stuckNpc = -1;
         private int stuckNpcType;
@@ -115,9 +90,6 @@ namespace SoA.Content.Projectiles
 
         // Где цель была в прошлом тике — по этому ловим телепорт
         private Vector2 lastTargetCenter;
-
-        // Состояние верёвки считает только клиент владельца — он же двигает игрока
-        private float ropeLength = -1f;
 
         // Насколько копьё утекло песком в руку хозяина: 0 — целое, 1 — рассыпалось
         private float reforgeProgress;
@@ -128,7 +100,9 @@ namespace SoA.Content.Projectiles
 
         // Копьё стоит воткнутым — только такое можно позвать песком: летящее ещё
         // никуда не воткнулось, а возвращающееся и так в руке
-        public bool Stuck => Phase == PhaseGeyser || Phase == PhaseAnchored;
+        public bool Stuck => Phase == PhaseAnchored;
+
+        public bool InFlight => Phase == PhaseFlight;
 
         // Своё брошенное копьё — одно на игрока, но перебираем честно: после
         // смерти/перезахода индекс снаряда не сохраняется
@@ -152,32 +126,12 @@ namespace SoA.Content.Projectiles
             (Projectile.velocity.Length() - SpeedFxThreshold) / (SpeedFxFull - SpeedFxThreshold),
             0f, 1f);
 
-        private bool SpeedFxActive => Projectile.velocity.Length() > SpeedFxThreshold;
-
-        // Смещение центра хитбокса от точки входа. В фазе гейзера колонна тянется вверх,
-        // и её высота меняется по кадру струи — поэтому считаем от ТЕКУЩЕЙ высоты.
-        // AnchorPoint и SetAnchor обязаны быть строго обратны друг другу, иначе копьё
-        // прыгает на разницу высот каждый кадр
-        private Vector2 AnchorOffset => Phase == PhaseGeyser
-            ? new Vector2(0f, Projectile.height * 0.5f - GeyserBaseOffset)
-            : Vector2.Zero;
-
-        // Точка, куда трезубец вошёл
-        private Vector2 AnchorPoint => Projectile.Center + AnchorOffset;
-
-        // Устье гейзера: та же точка, но ниже — вода бьёт из-под острия
-        private Vector2 GeyserMouth => AnchorPoint + new Vector2(0f, GeyserVisualDrop);
-
-        // 0..1 по жизни гейзера — гоняет и кадр спрайта, и высоту хитбокса
-        private float GeyserProgress => MathHelper.Clamp(Projectile.ai[1] / GeyserTicks, 0f, 1f);
-
-        // Трезубец бьёт холодной водой; горячий вариант оставлен биому и боссу
-        private const GeyserStyle GeyserVariant = GeyserStyle.Strong;
+        private bool SpeedFxActive => Phase == PhaseFlight && Projectile.velocity.Length() > SpeedFxThreshold;
 
         public override void SetDefaults()
         {
-            Projectile.width = FlightWidth;
-            Projectile.height = FlightHeight;
+            Projectile.width = SpearWidth;
+            Projectile.height = SpearHeight;
             Projectile.aiStyle = -1;
             Projectile.friendly = true;
             Projectile.DamageType = DamageClass.Melee;
@@ -191,8 +145,8 @@ namespace SoA.Content.Projectiles
             Projectile.knockBack = 0f;
         }
 
-        // Режим крюка задаётся при спавне и не меняется — гоняем его отдельным полем,
-        // потому что ванильная синхронизация снаряда возит только ai[0] и ai[1]
+        // Режим рывка задаётся при спавне и не меняется — гоняем его отдельным полем,
+        // потому что ванильная синхронизация снаряда возит только ai
         public void MarkSlam()
         {
             slam = true;
@@ -215,7 +169,7 @@ namespace SoA.Content.Projectiles
             stuckOffset = reader.ReadVector2();
         }
 
-        // Цель, в которой сидит трезубец. Слот мог освободиться или достаться другому
+        // Цель, в которой сидит копьё. Слот мог освободиться или достаться другому
         // NPC — сверяем ещё и с запомненным типом
         private NPC StuckTarget
         {
@@ -239,18 +193,12 @@ namespace SoA.Content.Projectiles
 
             UpdateReforge(owner);
 
-            if (Phase == PhaseGeyser)
-                UpdateGeyser();
-            else if (Phase == PhaseReturn)
+            if (Phase == PhaseReturn)
                 UpdateReturn(owner);
             else if (Phase == PhaseAnchored)
                 UpdateAnchored(owner);
             else
                 UpdateFlight();
-
-            // Крюк тянет игрока, пока тот не подтянулся к трезубцу
-            if (slam && Phase != PhaseReturn)
-                PullOwner(owner);
 
             Lighting.AddLight(Projectile.Center, 0.18f, 0.32f, 0.45f);
         }
@@ -271,7 +219,7 @@ namespace SoA.Content.Projectiles
         public void CrumbleAway()
         {
             if (!Main.dedServ)
-                SoundEngine.PlaySound(SoundID.Dig with { Pitch = -0.3f }, AnchorPoint);
+                SoundEngine.PlaySound(SoundID.Dig with { Pitch = -0.3f }, Projectile.Center);
 
             Projectile.Kill();
         }
@@ -294,47 +242,16 @@ namespace SoA.Content.Projectiles
             trail.scale = Main.rand.NextFloat(0.9f, 1.4f);
         }
 
-        private void UpdateGeyser()
-        {
-            Projectile.velocity = Vector2.Zero;
-
-            if (!FollowStuckTarget())
-                return;
-
-            if (++Projectile.ai[1] >= GeyserTicks)
-            {
-                EnterAnchored();
-                return;
-            }
-
-            // Хитбокс живёт по кадру спрайта: пока струя вспучивается или оседает,
-            // колонна не должна бить на всю высоту
-            ResizeJet();
-
-            TideGeyserFx.Emit(GeyserMouth, GeyserProgress, GeyserVariant, GeyserWidth);
-        }
-
-        // Держит высоту хитбокса равной высоте струи на текущем кадре, сохраняя устье
-        // на месте: сначала читаем анкер по старой высоте, потом ставим центр по новой
-        private void ResizeJet()
-        {
-            Vector2 anchor = AnchorPoint;
-            int jetHeight = (int)(GeyserHeight * TideGeyserFx.JetHeight(GeyserProgress));
-            Projectile.height = Math.Max(jetHeight, FlightHeight);
-            Projectile.width = GeyserWidth;
-            Projectile.Center = anchor - new Vector2(0f, Projectile.height * 0.5f - GeyserBaseOffset);
-        }
-
-        // Воткнутый трезубец стоит на месте, едет на цели и продолжает рвать её водой:
+        // Воткнутое копьё стоит на месте, едет на цели и продолжает резать её:
         // урон идёт сам по себе, хитбокс сидит внутри врага, а localNPCHitCooldown
-        // задаёт частоту тиков. Забрать его можно только придя за ним ногами
+        // задаёт частоту тиков. Забрать его можно, придя за ним или пересобрав песком
         private void UpdateAnchored(Player owner)
         {
             Projectile.velocity = Vector2.Zero;
 
             // Пока хозяин в пределах разумного — копьё торчит сколько угодно долго.
             // Уехал далеко и забыл — таймер идёт своим ходом и вернёт ему оружие
-            if (Vector2.DistanceSquared(owner.MountedCenter, AnchorPoint) < AbandonDistance * AbandonDistance)
+            if (Vector2.DistanceSquared(owner.MountedCenter, Projectile.Center) < AbandonDistance * AbandonDistance)
                 Projectile.timeLeft = AnchoredTicks;
 
             if (!FollowStuckTarget())
@@ -357,7 +274,7 @@ namespace SoA.Content.Projectiles
         {
             if (Projectile.owner != Main.myPlayer)
                 return false;
-            if (Vector2.DistanceSquared(owner.MountedCenter, AnchorPoint) > PickupRadius * PickupRadius)
+            if (Vector2.DistanceSquared(owner.MountedCenter, Projectile.Center) > PickupRadius * PickupRadius)
                 return false;
 
             EnterReturn();
@@ -389,70 +306,8 @@ namespace SoA.Content.Projectiles
             trail.scale = Main.rand.NextFloat(0.7f, 1.1f);
         }
 
-        // Верёвочная физика: гравитацию игроку считает ваниль, мы только держим связь.
-        // Натянутая верёвка не даёт удаляться от анкера (гасим радиальную составляющую
-        // «от себя») и тянет вдоль себя, а тангенциальная скорость остаётся — отсюда
-        // маятник вместо прежнего магнита, который просто подменял скорость каждый тик.
-        // Считает всё клиент владельца: скорость игрока симулирует он сам.
-        private void PullOwner(Player owner)
-        {
-            if (Projectile.owner != Main.myPlayer)
-                return;
-
-            var mp = owner.GetModPlayer<RoyalSpearPlayer>();
-            if (!mp.RidingSlam || mp.SlamArmed)
-                return; // взведённого игрока больше не держим: ему нужно упасть
-
-            Vector2 toAnchor = AnchorPoint - owner.MountedCenter;
-            float distance = toAnchor.Length();
-            if (distance < 1f)
-                return;
-            Vector2 dir = toAnchor / distance;
-
-            if (ropeLength < 0f)
-            {
-                // Копьё ещё не отлетело — верёвка провисает, игрок стоит свободно
-                if (distance < TetherEngageDistance)
-                {
-                    // Воткнулось под самым носом: ехать некуда, сразу ждём земли
-                    if (Phase != PhaseFlight)
-                        mp.ArmSlam();
-                    return;
-                }
-
-                // Верёвка кончилась и рвёт игрока с места — рывок вдоль неё
-                ropeLength = distance;
-                owner.velocity = dir * JoltSpeed - Vector2.UnitY * 3f;
-                SoundEngine.PlaySound(SoundID.Item17 with { Pitch = -0.3f }, owner.Center);
-                return;
-            }
-
-            // Трезубец подтягивает: верёвка укорачивается, дуга сжимается
-            ropeLength = MathHelper.Max(ropeLength - ReelSpeed, PullStopDistance);
-
-            if (distance <= PullStopDistance)
-            {
-                // Долетел до анкера — отпускаем С НАБРАННОЙ скоростью, дальше он падает сам
-                mp.ArmSlam();
-                return;
-            }
-
-            if (distance <= ropeLength)
-                return; // верёвка провисла, игрок в свободном полёте
-
-            float radial = Vector2.Dot(owner.velocity, dir);
-            if (radial < 0f)
-                owner.velocity -= dir * radial;
-
-            float overshoot = MathHelper.Clamp((distance - ropeLength) / 40f, 0f, 1f);
-            owner.velocity += dir * TensionAccel * (0.35f + 0.65f * overshoot);
-
-            if (owner.velocity.Length() > MaxRideSpeed)
-                owner.velocity = Vector2.Normalize(owner.velocity) * MaxRideSpeed;
-        }
-
         // Едет на цели, сохраняя точку входа. Возвращает false, если цель кончилась и
-        // трезубец сорвался — вызывающему в этот тик делать больше нечего.
+        // копьё сорвалось — вызывающему в этот тик делать больше нечего.
         private bool FollowStuckTarget()
         {
             if (stuckNpc < 0)
@@ -481,11 +336,11 @@ namespace SoA.Content.Projectiles
             }
 
             lastTargetCenter = target.Center;
-            SetAnchor(target.Center + stuckOffset);
+            Projectile.Center = target.Center + stuckOffset;
             return true;
         }
 
-        // Сорвался с цели: дальше просто падает и втыкается в землю
+        // Сорвалось с цели: дальше просто падает и втыкается в землю
         private void DropFromTarget(Vector2 dropAt)
         {
             stuckNpc = -1;
@@ -493,8 +348,6 @@ namespace SoA.Content.Projectiles
             lastTargetCenter = Vector2.Zero;
             Projectile.ai[0] = PhaseFlight;
             Projectile.ai[1] = 0f;
-            Projectile.width = FlightWidth;
-            Projectile.height = FlightHeight;
             Projectile.Center = dropAt;
             Projectile.friendly = true;
             Projectile.tileCollide = true;
@@ -503,18 +356,12 @@ namespace SoA.Content.Projectiles
             Projectile.netUpdate = true;
         }
 
-        // Ставит снаряд так, чтобы точка входа копья попала в anchor
-        private void SetAnchor(Vector2 anchor)
-        {
-            Projectile.Center = anchor - AnchorOffset;
-        }
-
-        private void EnterGeyser(Vector2 anchor, bool plantInGround = false)
+        private void EnterAnchored(bool plantInGround)
         {
             if (Phase != PhaseFlight)
                 return;
 
-            // Воткнувшийся в землю трезубец доворачиваем острием вниз: сохранённый угол
+            // Воткнувшееся в землю копьё доворачиваем остриём вниз: сохранённый угол
             // плоского броска читается как бревно, лежащее на траве
             if (plantInGround)
             {
@@ -523,51 +370,35 @@ namespace SoA.Content.Projectiles
                     + MathHelper.PiOver2;
             }
 
-            Projectile.ai[0] = PhaseGeyser;
+            Projectile.ai[0] = PhaseAnchored;
             Projectile.ai[1] = 0f;
             Projectile.velocity = Vector2.Zero;
             Projectile.tileCollide = false;
-            Projectile.width = GeyserWidth;
-            Projectile.height = GeyserHeight;
-            Projectile.Center = anchor - new Vector2(0f, GeyserHeight * 0.5f - GeyserBaseOffset);
             Array.Clear(Projectile.localNPCImmunity);
             Projectile.netUpdate = true;
 
-            SoundEngine.PlaySound(SoundID.Item21 with { Pitch = -0.2f }, anchor);
-        }
+            if (Main.dedServ)
+                return;
 
-        // Гейзер выдохся — трезубец остаётся торчать в цели или в грунте и продолжает
-        // резать: урон в этой фазе ослаблен, но идёт, пока копьё не позовут назад
-        private void EnterAnchored()
-        {
-            Vector2 anchor = AnchorPoint;
-            Projectile.ai[0] = PhaseAnchored;
-            Projectile.ai[1] = 0f;
-            Projectile.width = FlightWidth;
-            Projectile.height = FlightHeight;
-            Projectile.Center = anchor;
-            Projectile.friendly = true;
-            Array.Clear(Projectile.localNPCImmunity);
-            Projectile.netUpdate = true;
+            SoundEngine.PlaySound(SoundID.Item21 with { Pitch = -0.2f, Volume = 0.6f }, Projectile.Center);
+            for (int i = 0; i < (slam ? 26 : 12); i++)
+            {
+                Dust splash = Dust.NewDustPerfect(Projectile.Center, DustID.Water,
+                    Main.rand.NextVector2Circular(4f, 4f) - Vector2.UnitY * 1.5f);
+                splash.noGravity = true;
+                splash.scale = Main.rand.NextFloat(1f, 1.6f);
+            }
         }
 
         private void EnterReturn()
         {
-            Vector2 anchor = AnchorPoint;
             Projectile.ai[0] = PhaseReturn;
             Projectile.ai[1] = 0f;
-            Projectile.width = FlightWidth;
-            Projectile.height = FlightHeight;
-            Projectile.Center = anchor;
             Projectile.friendly = true;
             Projectile.tileCollide = false;
             Projectile.timeLeft = AnchoredTicks;
             Array.Clear(Projectile.localNPCImmunity);
             Projectile.netUpdate = true;
-
-            // Трезубец пошёл в руку — тянуть больше нечем, взрыв ждёт земли
-            if (slam && Projectile.owner == Main.myPlayer)
-                Main.player[Projectile.owner].GetModPlayer<RoyalSpearPlayer>().ArmSlam();
         }
 
         private void Catch(Player owner)
@@ -579,29 +410,27 @@ namespace SoA.Content.Projectiles
 
         public override bool OnTileCollide(Vector2 oldVelocity)
         {
-            // Влетел в потолок снизу — там доворот вниз выглядел бы нелепо
+            // Влетело в потолок снизу — там доворот вниз выглядел бы нелепо
             bool plant = oldVelocity.Y > -0.5f;
-            EnterGeyser(Projectile.Center - Vector2.Normalize(oldVelocity) * 4f, plant);
+            Projectile.Center -= Vector2.Normalize(oldVelocity) * 4f;
+            EnterAnchored(plant);
             return false;
         }
 
         public override void ModifyHitNPC(NPC target, ref NPC.HitModifiers modifiers)
         {
-            if (Phase == PhaseGeyser)
-                modifiers.FinalDamage *= GeyserDamageMultiplier;
-            else if (Phase == PhaseReturn)
+            if (Phase == PhaseReturn)
                 modifiers.FinalDamage *= ReturnDamageMultiplier;
             else if (Phase == PhaseAnchored)
                 modifiers.FinalDamage *= StuckDamageMultiplier;
 
-            // Пока копьё сидит в цели, тики DoT не должны её пинать: иначе враг
-            // отлетает каждые 14 тиков и катается по экрану вместе с трезубцем.
-            // Отбрасывание остаётся только у самого входа (фаза полёта) и у возврата.
-            if (Phase == PhaseGeyser || Phase == PhaseAnchored)
+            // Пока копьё сидит в цели, тики урона не должны её пинать: иначе враг
+            // отлетает каждые 14 тиков и катается по экрану вместе с копьём.
+            // Отбрасывание остаётся только у самого входа (полёт) и у возврата.
+            if (Phase == PhaseAnchored)
                 modifiers.Knockback *= 0f;
 
-            if (SoACombat.IsSoaked(target))
-                modifiers.FinalDamage *= SoakedDamageMultiplier;
+            SoACombat.ApplySoakBonus(target, ref modifiers);
         }
 
         public override void OnHitNPC(NPC target, NPC.HitInfo hit, int damageDone)
@@ -611,13 +440,15 @@ namespace SoA.Content.Projectiles
             if (Projectile.owner == Main.myPlayer)
                 Main.player[Projectile.owner].GetModPlayer<RoyalSpearPlayer>().AddSlamDamage(damageDone);
 
-            // Первая же цель на пути принимает трезубец: он входит в неё, поднимает
-            // гейзер и дальше едет вместе с ней
-            if (Phase == PhaseFlight)
-            {
-                StickInto(target);
-                EnterGeyser(Projectile.Center);
-            }
+            if (Phase != PhaseFlight)
+                return;
+
+            // Первая же цель на пути принимает копьё: оно входит в неё и дальше едет
+            // вместе с ней. Удар приливного рывка вдобавок вбивает цель на месте
+            StickInto(target);
+            if (slam)
+                TideStunDebuff.Apply(target);
+            EnterAnchored(false);
         }
 
         // Точку входа запоминаем смещением от центра цели: так копьё сидит в той же
@@ -642,17 +473,11 @@ namespace SoA.Content.Projectiles
 
         public override bool PreDraw(ref Color lightColor)
         {
-            if (Phase == PhaseGeyser)
-                DrawGeyserColumn();
-
-            if (slam)
-                DrawTether();
-
             if (SpeedFxActive)
                 DrawSpeedFx();
 
             Texture2D tex = TextureAssets.Projectile[Type].Value;
-            Vector2 drawPos = AnchorPoint - Main.screenPosition;
+            Vector2 drawPos = Projectile.Center - Main.screenPosition;
 
             // Копьё разбирают песком: та же сборка, только прогресс идёт назад
             if (reforgeProgress > 0.01f)
@@ -669,14 +494,6 @@ namespace SoA.Content.Projectiles
             return false;
         }
 
-        // Струю рисует спрайтовый компонент: кадр берётся из прогресса гейзера,
-        // ширина в мире задаётся здесь и от неё же считается масштаб листа
-        private void DrawGeyserColumn()
-        {
-            TideGeyserFx.Draw(Main.spriteBatch, GeyserMouth, GeyserProgress,
-                GeyserVariant, GeyserWidth * JetDrawWidth, 1f, Projectile.identity);
-        }
-
         // Разгон за порогом: процедурный шлейф (SoA:SpeedRush) позади острия плюс две
         // дуги, бегущие вдоль древка от пятки к наконечнику. Обе вещи держатся на
         // фактической скорости, поэтому по мере просадки в конце дуги гаснут сами
@@ -685,7 +502,7 @@ namespace SoA.Content.Projectiles
             float intensity = SpeedIntensity;
             float aim = Projectile.velocity.ToRotation();
 
-            // Квад шлейфа острием вперёд: центр сдвинут назад, чтобы конус тянулся
+            // Квад шлейфа остриём вперёд: центр сдвинут назад, чтобы конус тянулся
             // за копьём, а не накрывал его
             Vector2 rushCenter = Projectile.Center - Projectile.velocity.SafeNormalize(Vector2.UnitX)
                 * (RushLength * 0.5f - 18f);
@@ -699,30 +516,6 @@ namespace SoA.Content.Projectiles
             SoAVfx.DrawTravellingArcs(Main.spriteBatch, Projectile.Center, aim,
                 ArcLength, ArcBow * (0.7f + 0.5f * intensity), phase,
                 new Color(140, 220, 255, 0) * (0.55f + 0.45f * intensity));
-            SoAVfx.EndAdditive(Main.spriteBatch);
-        }
-
-        // Верёвка — не цепь, а провисающая струя воды: цепочка аддитивных капель
-        // по линии «рука игрока → трезубец» с провисом по синусу
-        private void DrawTether()
-        {
-            Player owner = Main.player[Projectile.owner];
-            Vector2 hand = owner.MountedCenter;
-            Vector2 toProjectile = AnchorPoint - hand;
-            float sag = MathHelper.Clamp(toProjectile.Length() * 0.12f, 0f, 26f);
-
-            SoAVfx.BeginAdditive(Main.spriteBatch);
-            for (int i = 1; i <= TetherSegments; i++)
-            {
-                float t = i / (float)TetherSegments;
-                Vector2 point = hand + toProjectile * t;
-                point.Y += (float)Math.Sin(t * MathHelper.Pi) * sag;
-                point += new Vector2(0f, (float)Math.Sin(t * 9f - Main.GlobalTimeWrappedHourly * 12f) * 2.5f);
-
-                float thickness = MathHelper.Lerp(7f, 12f, (float)Math.Sin(t * MathHelper.Pi));
-                SoAVfx.DrawTintedGlow(Main.spriteBatch, point, new Vector2(thickness),
-                    new Color(120, 200, 255) * 0.55f);
-            }
             SoAVfx.EndAdditive(Main.spriteBatch);
         }
     }

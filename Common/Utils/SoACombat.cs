@@ -11,6 +11,9 @@ namespace SoA.Common.Utils
     {
         public const int SoakDuration = 240;
 
+        // Бонус водяного оружия по промокшим целям
+        public const float SoakedDamageMultiplier = 1.25f;
+
         public static bool IsSoaked(NPC npc)
         {
             return npc.wet || npc.HasBuff(BuffID.Wet);
@@ -19,6 +22,13 @@ namespace SoA.Common.Utils
         public static void Soak(NPC npc, int ticks = SoakDuration)
         {
             npc.AddBuff(BuffID.Wet, ticks);
+        }
+
+        // Для ModifyHitNPC водяных снарядов: одна строка вместо своей копии множителя
+        public static void ApplySoakBonus(NPC target, ref NPC.HitModifiers modifiers)
+        {
+            if (IsSoaked(target))
+                modifiers.FinalDamage *= SoakedDamageMultiplier;
         }
 
         // Точка в воде (не в лаве и не в мёде) — для снарядов, которые меняют поведение под водой

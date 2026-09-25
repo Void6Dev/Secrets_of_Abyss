@@ -1,46 +1,78 @@
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.Audio;
-using Terraria.Graphics.CameraModifiers;
 using Terraria.ID;
 using Terraria.ModLoader;
-using SoA.Content.Projectiles;
 
 namespace SoA.Common.Players
 {
     // Состояние Королевского копья на игроке:
-    //   ComboStep  — какой из трёх выпадов связки уходит сейчас
     //   SlamDamage — счётчик нанесённого урона, копится под игроком в полоску;
-    //                на полной шкале следующий бросок ПКМ уносит игрока на верёвке
-    //                за копьём, а приземление рвёт водным взрывом
-    // Обе шкалы и вся поездка живут только у владельца персонажа: скорость игрока
-    // симулирует он сам, поэтому пакеты тут не нужны.
+    //                на полной шкале бросок ПКМ становится приливным рывком: игрок
+    //                за DashTicks проносится к точке над курсором, оттуда копьё бьёт
+    //                вниз, игрок пикирует вместе с ним, цель оглушена
+    //                (RoyalSpearCharge → StartDash → LaunchDive → RoyalSpearThrown)
+    // Шкала, прицел и рывок живут только у владельца персонажа: курсор есть только у
+    // него, а позицию игрока остальным разносит обычная синхронизация.
     public class RoyalSpearPlayer : ModPlayer
     {
-        public const int ComboLength = 3;
         public const int SlamDamageRequired = 2000;
 
+        // Замах шквала (зажатая ЛКМ) придерживает игрока: копьё отведено для удара,
+        // бегать с ним в полную силу нельзя, но и в столб он не превращается
+        private const float StrikeChargeRunMultiplier = 0.65f;
 
-        // Копьё чаще всего втыкается в землю, поэтому «подтянулся к копью» и «коснулся
-        // земли» приходятся на один тик — без нижнего порога взрыв рвал бы прямо в точке
-        // втыкания, никакого полёта игрок не видел.
-        // Рывок с места даёт натянувшаяся верёвка (RoyalSpearThrown), не прыжок здесь.
-        private const int MinRideTicks = 24;
-        private const int MaxRideTicks = 500;
+        // Рывок ставит игрока над целью: ногами на такой высоте над точкой курсора.
+        // Если потолок ниже — опускаем, пока персонаж не поместится
+        private const float TeleportHover = 56f;
+        private const float TeleportHoverStep = 8f;
 
-        public int ComboStep { get; private set; }
+        // Рывок — не мгновенный телепорт, а бросок сквозь воздух за DashTicks: глаз
+        // успевает увидеть полёт и водяную ленту за ним (RoyalSpearDashTrail)
+        private const int DashTicks = 8;
+
+        // Над целью копьё бьёт вниз, и игрок пикирует вместе с ним на той же скорости,
+        // пока копьё не воткнётся или игрок не упрётся в землю
+        public const float DiveSpeed = 30f;
+        private const int MaxDiveTicks = 45;
+
+        // Весь приём и немного после — неуязвимость и без урона от падения: пике в упор
+        // к цели иначе сразу стоило бы удара об неё
+        private const int DashImmunity = 40;
+        private const int LandingGraceTicks = 10;
+
         public int SlamDamage { get; private set; }
         public bool SlamReady => SlamDamage >= SlamDamageRequired;
         public float SlamProgress => MathHelper.Clamp(SlamDamage / (float)SlamDamageRequired, 0f, 1f);
 
-        public bool RidingSlam { get; private set; }
+        // Прицел рывка: зажата ПКМ с полной шкалой. Держит его RoyalSpearCharge у владельца,
+        // читает RoyalSpearReticle, чтобы подменить курсор
+        public bool AimingTeleport => aimTicks > 0;
+        public bool TeleportValid { get; private set; }
+        public Vector2 TeleportDestination { get; private set; }
 
-        // Взведён — верёвка отработала (подтянула к копью или копьё пошло назад),
-        // дальше взрыв ждёт первого касания земли
-        public bool SlamArmed { get; private set; }
+        private int aimTicks;
 
-        private int burstDamage;
-        private int rideTicks;
+        // Рывок и пике. Живут только у владельца: он двигает своего игрока, остальным
+        // позицию разносит обычная синхронизация, а ленту рисует снаряд-след
+        private Vector2 dashFrom;
+        private Vector2 dashTo;
+        private int dashTick = -1;
+        private bool diving;
+        private int diveTicks;
+        private Vector2 diveVelocity;
+        private int landingGrace;
+
+        // Чем бить, когда рывок долетит: запоминаем при старте, копьё создаётся на месте
+        private Vector2 strikeTarget;
+        private int strikeDamage;
+        private float strikeKnockback;
+
+        public bool Dashing => dashTick >= 0 || diving;
+
+        // Замах шквала жив: снаряд продлевает флаг каждый тик. Счётчик, а не bool, потому
+        // что снаряды обновляются после игрока — флаг должен дожить до следующего тика
+        private int strikeChargeTicks;
 
         // player.channel держится только левой кнопкой: Player.ItemCheck сбрасывает его
         // в тот же тик, когда controlUseItem == false, а ПКМ-альтфункция поднимает
@@ -75,23 +107,7 @@ namespace SoA.Common.Players
                 owner.itemRotation += MathHelper.Pi;
         }
 
-        // Все три удара живут внутри одной анимации, поэтому шаг просто крутится по
-        // кругу: связка не может оборваться на середине, а CanUseItem сбрасывает её
-        // на нуле в начале каждого нажатия
-        public int AdvanceCombo()
-        {
-            int step = ComboStep;
-            ComboStep = (step + 1) % ComboLength;
-            return step;
-        }
-
-        public void ResetCombo()
-        {
-            ComboStep = 0;
-        }
-
-        // Шкалу набивает любой урон от копья — выпад, вал, бросок, гейзер.
-        // Взрыв себя не подпитывает, иначе цепочка была бы бесконечной.
+        // Шкалу набивает любой урон от копья — удары ЛКМ и брошенное копьё
         public void AddSlamDamage(int damage)
         {
             if (SlamDamage < SlamDamageRequired)
@@ -106,82 +122,196 @@ namespace SoA.Common.Players
             return true;
         }
 
-        public void BeginSlamRide(int explosionDamage)
+        // Зовёт RoyalSpearFlurry каждый тик замаха на всех клиентах: замедление должно
+        // совпадать у всех, иначе чужой игрок на экране бежал бы быстрее, чем на самом деле
+        public void KeepStrikeCharge()
         {
-            RidingSlam = true;
-            SlamArmed = false;
-            burstDamage = explosionDamage;
-            rideTicks = 0;
+            strikeChargeTicks = 2;
         }
 
-        // Зовёт снаряд, когда тянуть больше некуда
-        public void ArmSlam()
+        // Зовёт RoyalSpearCharge у владельца каждый тик прицеливания рывка
+        public void KeepTeleportAim(Vector2 target)
         {
-            if (RidingSlam)
-                SlamArmed = true;
+            aimTicks = 2;
+            TeleportValid = TryFindTeleport(Player, target, out Vector2 destination);
+            TeleportDestination = destination;
         }
 
-        public void EndSlamRide()
+        // Куда встанет игрок, если рвануть к target. Правило пользователя: только туда,
+        // куда персонаж может попасть, не проходя сквозь блоки, — поэтому нужна прямая
+        // видимость от игрока до места прибытия, и само место должно быть свободно.
+        // destination — левый верхний угол хитбокса игрока (как Player.position)
+        public static bool TryFindTeleport(Player player, Vector2 target, out Vector2 destination)
         {
-            RidingSlam = false;
-            SlamArmed = false;
-            rideTicks = 0;
+            destination = Vector2.Zero;
+            if (!WorldGen.InWorld((int)(target.X / 16f), (int)(target.Y / 16f), 10))
+                return false;
+
+            for (float hover = TeleportHover; hover >= 0f; hover -= TeleportHoverStep)
+            {
+                Vector2 candidate = new(target.X - player.width * 0.5f, target.Y - hover - player.height);
+                if (Collision.SolidCollision(candidate, player.width, player.height))
+                    continue;
+
+                if (!Collision.CanHitLine(player.position, player.width, player.height,
+                        candidate, player.width, player.height))
+                    return false;
+
+                destination = candidate;
+                return true;
+            }
+            return false;
+        }
+
+        // Старт рывка. Зовётся у владельца из RoyalSpearCharge: дальше игрока ведёт
+        // PreUpdateMovement, а копьё появится, когда рывок долетит
+        public void StartDash(Vector2 destination, Vector2 target, int damage, float knockback)
+        {
+            dashFrom = Player.position;
+            dashTo = destination;
+            dashTick = 0;
+            diving = false;
+            strikeTarget = target;
+            strikeDamage = damage;
+            strikeKnockback = knockback;
+
+            Player.RemoveAllGrapplingHooks();
+            Player.immune = true;
+            Player.immuneNoBlink = true;
+            Player.immuneTime = System.Math.Max(Player.immuneTime, DashImmunity);
+
+            Projectile.NewProjectile(Player.GetSource_ItemUse(Player.HeldItem), Player.Center, Vector2.Zero,
+                ModContent.ProjectileType<Content.Projectiles.RoyalSpearDashTrail>(), 0, 0f, Player.whoAmI);
+
+            if (Main.dedServ)
+                return;
+
+            EmitTeleportSplash(Player.Center);
+            SoundEngine.PlaySound(SoundID.Item8 with { Pitch = -0.2f }, Player.Center);
+            SoundEngine.PlaySound(SoundID.Item7 with { Pitch = -0.4f, Volume = 0.9f }, Player.Center);
+        }
+
+        // Долетел: копьё бьёт вниз в цель, игрок пикирует вместе с ним
+        private void LaunchDive()
+        {
+            Vector2 direction = (strikeTarget - Player.Center).SafeNormalize(Vector2.UnitY);
+            diveVelocity = direction * DiveSpeed;
+            diving = true;
+            diveTicks = 0;
+            Player.velocity = diveVelocity; // этот же тик уже летим, иначе PostUpdate решит, что упёрлись
+
+            int index = Projectile.NewProjectile(Player.GetSource_ItemUse(Player.HeldItem), Player.Center,
+                diveVelocity, ModContent.ProjectileType<Content.Projectiles.RoyalSpearThrown>(),
+                strikeDamage, strikeKnockback, Player.whoAmI);
+            if (Main.projectile[index].ModProjectile is Content.Projectiles.RoyalSpearThrown thrown)
+                thrown.MarkSlam();
+
+            if (Main.dedServ)
+                return;
+
+            SoundEngine.PlaySound(SoundID.Item1 with { Pitch = -0.4f }, Player.Center);
+            SoundEngine.PlaySound(SoundID.Splash with { Pitch = 0.2f }, Player.Center);
+        }
+
+        private void EndDive(bool landed)
+        {
+            diving = false;
+            landingGrace = LandingGraceTicks;
+
+            if (!landed || Main.dedServ)
+                return;
+
+            EmitTeleportSplash(Player.Bottom);
+            SoundEngine.PlaySound(SoundID.Item21 with { Pitch = -0.3f, Volume = 0.7f }, Player.Bottom);
+        }
+
+        // Скорость рывка и пике выставляем здесь, а не в снаряде: этот хук идёт после
+        // ванильного ограничения скорости падения (10 px/тик), и пике со скоростью копья
+        // им не срезается
+        public override void PreUpdateMovement()
+        {
+            if (dashTick >= 0)
+            {
+                dashTick++;
+                float t = MathHelper.Clamp(dashTick / (float)DashTicks, 0f, 1f);
+                float eased = 1f - (1f - t) * (1f - t);
+                Vector2 previous = Player.position;
+                Player.position = Vector2.Lerp(dashFrom, dashTo, eased);
+                Player.velocity = Vector2.Zero;
+                if (System.Math.Abs(Player.position.X - previous.X) > 0.5f)
+                    Player.ChangeDir(Player.position.X > previous.X ? 1 : -1);
+
+                if (dashTick >= DashTicks)
+                {
+                    dashTick = -1;
+                    if (Player.whoAmI == Main.myPlayer)
+                        LaunchDive();
+                }
+            }
+            else if (diving)
+            {
+                Player.velocity = diveVelocity;
+            }
+        }
+
+        private void EmitTeleportSplash(Vector2 at)
+        {
+            for (int i = 0; i < 24; i++)
+            {
+                Dust drop = Dust.NewDustPerfect(at + Main.rand.NextVector2Circular(Player.width, Player.height * 0.5f),
+                    DustID.Water, Main.rand.NextVector2Circular(3.5f, 3.5f));
+                drop.noGravity = true;
+                drop.scale = Main.rand.NextFloat(1.1f, 1.7f);
+            }
+        }
+
+        public override void UpdateDead()
+        {
+            strikeChargeTicks = 0;
+            aimTicks = 0;
+            dashTick = -1;
+            diving = false;
         }
 
         public override void PreUpdate()
         {
-            if (!RidingSlam)
+            if (!Dashing && landingGrace <= 0)
                 return;
 
-            // Верёвка тащит игрока в упор к цели и роняет с высоты, так что за поездку
-            // он неизбежно ловил и контактный урон, и падение. На время связки —
-            // неуязвимость без мигания: это заряженный добивающий приём, а не прогулка
             Player.noFallDmg = true;
-            Player.immune = true;
-            Player.immuneNoBlink = true;
-            if (Player.immuneTime < 2)
-                Player.immuneTime = 2;
+            Player.fallStart = (int)(Player.position.Y / 16f);
+        }
+
+        public override void PostUpdateRunSpeeds()
+        {
+            if (strikeChargeTicks <= 0)
+                return;
+
+            Player.maxRunSpeed *= StrikeChargeRunMultiplier;
+            Player.accRunSpeed *= StrikeChargeRunMultiplier;
+            Player.runAcceleration *= StrikeChargeRunMultiplier;
         }
 
         public override void PostUpdate()
         {
-            if (!RidingSlam || Player.whoAmI != Main.myPlayer)
+            if (strikeChargeTicks > 0)
+                strikeChargeTicks--;
+            if (aimTicks > 0)
+                aimTicks--;
+            if (landingGrace > 0)
+                landingGrace--;
+
+            if (!diving)
                 return;
 
-            rideTicks++;
-
-            // Пока летим — обнуляем точку падения, иначе урон посчитается по всей дуге
-            Player.fallStart = (int)(Player.position.Y / 16f);
-
-            // Взрыв рвёт в момент касания земли, но не раньше MinRideTicks от броска:
-            // иначе он срабатывал в тот же тик, когда копьё вошло в грунт под ногами
-            if (SlamArmed && rideTicks >= MinRideTicks && Player.velocity.Y == 0f)
-            {
-                TriggerSlamBurst();
-                return;
-            }
-
-            // Затянувшуюся поездку (застрял в воздухе, потерял копьё) всё равно
-            // разрешаем ударом, иначе полная шкала сгорела бы впустую
-            if (rideTicks >= MaxRideTicks)
-                TriggerSlamBurst();
-        }
-
-        private void TriggerSlamBurst()
-        {
-            EndSlamRide();
-
-            Vector2 impact = Player.Bottom;
-            Projectile.NewProjectile(Player.GetSource_ItemUse(Player.HeldItem), impact, Vector2.Zero,
-                ModContent.ProjectileType<RoyalTideBurst>(), burstDamage, 12f, Player.whoAmI);
-
-            SoundEngine.PlaySound(SoundID.Item14 with { Pitch = -0.5f }, impact);
-            SoundEngine.PlaySound(SoundID.Item21, impact);
-            Main.instance.CameraModifiers.Add(new PunchCameraModifier(
-                impact, Main.rand.NextVector2Unit(), 14f, 7f, 22, 1400f, "RoyalTideSlam"));
-
-            // Копьё в руку не зовём: связка приносит игрока к самому древку, и оно
-            // подберётся само, как только гейзер отработает
+            // Пике кончается, когда игрок упёрся (скорость после столкновения упала
+            // вдвое), когда копьё уже воткнулось или по таймеру
+            diveTicks++;
+            bool blocked = Player.velocity.LengthSquared() < diveVelocity.LengthSquared() * 0.25f;
+            var spear = Content.Projectiles.RoyalSpearThrown.FindOwned(Player);
+            bool spearLanded = spear == null || !spear.InFlight;
+            if (blocked || spearLanded || diveTicks >= MaxDiveTicks)
+                EndDive(landed: blocked);
         }
     }
 }
