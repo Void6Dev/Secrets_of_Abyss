@@ -154,14 +154,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (InOceanRage || State == CrabState.Dying)
                 return;
 
-            if (InTerritory(target))
+            // Из-под земли король владения не сторожит. Раньше ярость входила прямо посреди
+            // подкопа или боя свиты (до 90 с на глубине): BeginOceanRage возвращал столкновения
+            // туше в толще грунта, и король там застревал, а бой со свитой обрывался.
+            // Выберется наружу — начнёт отсчёт заново, с предупреждением
+            if (PassingThroughTiles || InTerritory(target))
             {
-                // Сброс обязан уехать по сети: иначе у клиента счётчик так и останется
-                // ненулевым и виньетка будет пульсировать до конца боя
-                if (_territoryWarnTimer > 0)
-                    NPC.netUpdate = true;
-                _territoryWarnTimer = 0;
-                _territoryWarned = false;
+                ResetTerritoryWarning();
                 return;
             }
 
@@ -178,13 +177,23 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 BeginOceanRage();
         }
 
+        private void ResetTerritoryWarning()
+        {
+            // Сброс обязан уехать по сети: иначе у клиента счётчик так и останется
+            // ненулевым и виньетка будет пульсировать до конца боя
+            if (_territoryWarnTimer > 0)
+                NPC.netUpdate = true;
+            _territoryWarnTimer = 0;
+            _territoryWarned = false;
+        }
+
         private void BeginOceanRage()
         {
             _territoryWarnTimer = 0;
             _territoryWarned = false;
 
-            // Ярость может застать короля посреди подкопа — вернуть ему столкновения обязательно,
-            // иначе он уйдёт сквозь мир вместо погони
+            // Под землёй сюда не попадаем (см. UpdateTerritoryWatch), так что столкновения
+            // уже на месте; строка — страховка на случай нового стейта, забывшего о них
             NPC.noTileCollide = false;
             EnterState(CrabState.OceanRage, RageIgniteTicks, RageSubIgnite);
         }
