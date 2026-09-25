@@ -13,7 +13,9 @@ namespace SoA.Common.Utils
     // Экспорт/размещение построек. Формат — TagCompound (.str):
     // легенды типов тайлов и стен хранятся по именам для модовых типов,
     // поэтому файл переживает пересборку мода и смену внутренних ID.
-    // Ограничения v1: содержимое сундуков и провода не сохраняются.
+    // v3: маска клеток — постройка может быть любой формы, невыделенные клетки
+    // внутри габаритного прямоугольника при размещении не трогаются вообще.
+    // Ограничения: содержимое сундуков и провода не сохраняются.
     public static class StructureIO
     {
         public const int MaxWidth = 250;
@@ -22,13 +24,20 @@ namespace SoA.Common.Utils
         public static string ExportDirectory => Path.Combine(Main.SavePath, "SoAStructures");
 
         // --- Экспорт области мира в файл на диске ---
-        public static string Export(Rectangle tileArea, string name)
+        // mask == null — экспортируем весь прямоугольник; иначе только перечисленные
+        // клетки (координаты мира), остальные помечаются как «не часть постройки».
+        // filters — что выкинуть из постройки (жидкости, стены, покраска).
+        public static string Export(Rectangle tileArea, string name,
+            StructureFilter filters = StructureFilter.None, IReadOnlySet<Point> mask = null)
         {
             int w = tileArea.Width, h = tileArea.Height;
             var tileLegend = new List<string>();
             var wallLegend = new List<string>();
             var legendIndex = new Dictionary<string, int>();
             var wallIndex = new Dictionary<string, int>();
+
+            bool skipLiquids = (filters & StructureFilter.SkipLiquids) != 0;
+            bool skipWalls = (filters & StructureFilter.SkipWalls) != 0;
 
             int[] tType = new int[w * h];
             int[] frameX = new int[w * h];
@@ -37,33 +46,51 @@ namespace SoA.Common.Utils
             int[] liquid = new int[w * h];
             int[] slope = new int[w * h];
             int[] paint = new int[w * h];
+            byte[] maskData = mask != null ? new byte[w * h] : null;
 
             for (int dx = 0; dx < w; dx++)
             {
                 for (int dy = 0; dy < h; dy++)
                 {
                     int idx = dx * h + dy;
-                    Tile tile = Main.tile[tileArea.X + dx, tileArea.Y + dy];
+                    int x = tileArea.X + dx, y = tileArea.Y + dy;
 
-                    tType[idx] = tile.HasTile
+                    bool inStructure = WorldGen.InWorld(x, y, 1)
+                        && (mask == null || mask.Contains(new Point(x, y)));
+                    if (maskData != null)
+                        maskData[idx] = inStructure ? (byte)1 : (byte)0;
+
+                    if (!inStructure)
+                    {
+                        // Клетка не размещается — значения не важны, но легенду не пачкаем
+                        tType[idx] = -1;
+                        wall[idx] = -1;
+                        continue;
+                    }
+
+                    Tile tile = Main.tile[x, y];
+                    bool keepTile = tile.HasTile && !StructureFilters.Skips(tile.TileType, filters);
+
+                    tType[idx] = keepTile
                         ? LegendId(TileKey(tile.TileType), tileLegend, legendIndex)
                         : -1;
-                    frameX[idx] = tile.TileFrameX;
-                    frameY[idx] = tile.TileFrameY;
-                    wall[idx] = tile.WallType > 0
+                    frameX[idx] = keepTile ? tile.TileFrameX : 0;
+                    frameY[idx] = keepTile ? tile.TileFrameY : 0;
+                    wall[idx] = tile.WallType != WallID.None && !skipWalls
                         ? LegendId(WallKey(tile.WallType), wallLegend, wallIndex)
                         : -1;
-                    liquid[idx] = (tile.LiquidType << 8) | tile.LiquidAmount;
-                    slope[idx] = (int)tile.Slope | (tile.IsHalfBlock ? 8 : 0);
+                    liquid[idx] = skipLiquids ? 0 : (tile.LiquidType << 8) | tile.LiquidAmount;
+                    slope[idx] = keepTile ? (int)tile.Slope | (tile.IsHalfBlock ? 8 : 0) : 0;
                     paint[idx] = PackPaint(tile);
                 }
             }
 
             var tag = new TagCompound
             {
-                ["version"] = 2,
+                ["version"] = 3,
                 ["w"] = w,
                 ["h"] = h,
+                ["filters"] = (int)filters,
                 ["tileLegend"] = tileLegend,
                 ["wallLegend"] = wallLegend,
                 ["t"] = tType,
@@ -74,6 +101,9 @@ namespace SoA.Common.Utils
                 ["sl"] = slope,
                 ["pt"] = paint,
             };
+
+            if (maskData != null)
+                tag["mask"] = maskData;
 
             Directory.CreateDirectory(ExportDirectory);
             string path = Path.Combine(ExportDirectory, name + ".str");
@@ -114,11 +144,17 @@ namespace SoA.Common.Utils
             int[] slope = tag.GetIntArray("sl");
             int[] paint = tag.GetIntArray("pt");    // v1-файлы без покраски → пустой массив
             bool hasPaint = paint.Length == w * h;
+            byte[] mask = tag.ContainsKey("mask") ? tag.GetByteArray("mask") : null;
+            bool hasMask = mask != null && mask.Length == w * h;   // до v3 постройки прямоугольные
 
             for (int dx = 0; dx < w; dx++)
             {
                 for (int dy = 0; dy < h; dy++)
                 {
+                    int idx = dx * h + dy;
+                    if (hasMask && mask[idx] == 0)
+                        continue;   // клетка вне выделения — оставляем мир как есть
+
                     // Зеркалим положение колонки; кадры и склоны отражаем ниже,
                     // чтобы многотайловые объекты и сундуки собрались правильно
                     int destDx = mirror ? w - 1 - dx : dx;
@@ -126,7 +162,6 @@ namespace SoA.Common.Utils
                     if (!WorldGen.InWorld(x, y, 10))
                         continue;
 
-                    int idx = dx * h + dy;
                     Tile tile = Main.tile[x, y];
                     tile.ClearTile();
 

@@ -6,6 +6,7 @@ using Terraria;
 using Terraria.GameContent;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
+using SoA.Common.Graphics.Animation;
 
 namespace SoA.Content.NPCs.Bosses.KingCrab
 {
@@ -15,47 +16,19 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
     // Рисуется в PreDraw ПОЗАДИ панциря.
     public partial class King_crab
     {
-        // --- Настройки (крути тут) ---
-        private const float BodyLift = 50f;        // на сколько px тело приподнято над землёй (спрайт + крепление ног)
-        private const float LegScale = 1.6f;       // размер ног относительно тела (1 = как раньше)
-        private const float LegBoneUpperPx = 40f;  // расстояние пивот→колено в KingCrabLegUpper.png (пивот x2 → колено x42)
-        private const float LegBoneLowerPx = 44f;  // расстояние колено→лапка в KingCrabLegLower.png (пивот x2 → лапка x46)
-        private const int StepDuration = 12;        // тиков на шаг в покое
-        private const int StepDurationFast = 6;     // тиков на шаг на полной скорости
-        private const float StepTrigger = 30f;      // отход стопы до перестановки в покое
-        private const float StepTriggerFast = 18f;  // то же на полной скорости (короче шаг)
-        private const float StepLift = 14f;         // высота подъёма стопы в покое
-        private const float StepLiftFast = 24f;     // выше на скорости — читаемая рысь
-        private const float StepLead = 12f;         // базовый заброс стопы вперёд
-        private const float StepLeadPerSpeed = 2.4f;// доп. заброс за каждую единицу скорости
-        private const float FullSpeed = 7f;         // при какой |velocity.X| походка «на полной»
-        private const float FootProbeDepth = 240f;  // как глубоко искать землю под стопой
-        private const float BodySquashAmount = 0.32f; // предел деформации тела (squash & stretch)
-
-        // Пивоты (синяя/зелёная точки из шаблона) в пикселях текстур
-        private static readonly Vector2 UpperPivot = new(2f, 8f);
-        private static readonly Vector2 LowerPivot = new(2f, 6f);
-
-        // Бёдра относительно центра тела (правая сторона; левая зеркалится по X).
-        // 3 ноги на бок: передняя, средняя, задняя.
-        private static readonly Vector2[] HipLocal =
-        {
-            new(34f, 4f),
-            new(56f, 14f),
-            new(76f, 22f),
-        };
-
-        // Насколько стопа стоит наружу от бедра по X (крабья раскоряка)
-        private static readonly float[] FootSpread = { 34f, 30f, 40f };
+        // Все числа рига (BodyLift, LegScale, кости, бёдра, походка) — в King_crab.Rig.cs
 
         private Asset<Texture2D> _legUpper;
         private Asset<Texture2D> _legLower;
         private Leg[] _legs;
         private int _airborneTicks;   // гистерезис детекта «в воздухе»
         private bool _wasAirborne;    // для чистой постановки ног при приземлении
-        private float _squashPose;    // деформация от текущей стадии (присед/вытяжка)
-        private float _squashImpact;  // затухающий импульс сжатия от приземления
-        private float _bodySquash;    // итог для DrawBody: >0 сплющен, <0 вытянут
+        private float _squashPose;      // деформация от текущей стадии (присед/вытяжка)
+        private float _squashImpact;    // импульс сжатия от приземления (пружина, не экспонента)
+        private float _squashImpactVel;
+        private float _bodySquash;      // итог для DrawBody: >0 сплющен, <0 вытянут
+        private float _gaitBob;         // 0..1: доля лап в фазе переноса — оседание корпуса
+        private int _idleStepTimer;     // до следующего одиночного переступа в покое
 
         private class Leg
         {
@@ -64,7 +37,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             public Vector2 StepFrom;
             public Vector2 StepTo;
             public int StepTimer;
-        }
+            public int StepSpan = StepDuration; // длина ИМЕННО ЭТОГО шага: скорость могла
+        }                                       // измениться, пока стопа летит по дуге
 
         public override bool PreDraw(SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor)
         {
@@ -83,12 +57,31 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return false;
             }
 
+            UpdateAnimation(); // кейфреймовый слой первым: риг ниже читает его позы
             UpdateLegs();
             UpdateClaws();
             UpdateCrown();
             UpdateRings();
             UpdateBursts();
+            UpdateRageAura();
+            UpdateDelayedFx();
+            UpdateFlashesAndCracks();
+            UpdateLiveliness();
             RecordAfterimage();
+
+            // Трещины на грунте — единственное тёмное, что рисует босс: это повреждение
+            // поверхности, оно обязано быть темнее грунта. Всё остальное СВЕТИТСЯ:
+            // затемнять картинку в бою нечем.
+            DrawCracks(spriteBatch);
+
+            SoAVfx.BeginAdditive(spriteBatch);
+            DrawLandingMarker(spriteBatch);
+            DrawSlamTelegraph(spriteBatch);
+            DrawSweepTelegraph(spriteBatch);
+            DrawTideGapLight(spriteBatch);
+            DrawGripGlow(spriteBatch);
+            DrawCrownGroundLight(spriteBatch);
+            SoAVfx.EndAdditive(spriteBatch);
 
             // Аддитивные слои позади тела. Раздельные батчи: шейдерная аура и плоские ауры/кольца
             // не смешиваются в одном Immediate-батче (иначе последний Apply испортит следующий Draw).
@@ -116,11 +109,35 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             }
 
             DrawAfterimages(spriteBatch, screenPos); // шлейф позади всего
-            DrawLegs(spriteBatch, screenPos, drawColor);
-            DrawBody(spriteBatch, screenPos, drawColor); // тело рисуем сами — ради squash & stretch
+
+            // Под толщей грунта самого короля не видно — на поверхности остаются только пыль,
+            // бугор и слетевшая корона (их рисуют блоки выше и DrawCrown ниже)
+            if (!BurrowBuried)
+            {
+                DrawLegs(spriteBatch, screenPos, drawColor);
+                DrawBody(spriteBatch, screenPos, drawColor); // тело рисуем сами — ради squash & stretch
+                DrawEyesGlow(spriteBatch); // свечение глаз на морде, под короной и клешнями
+            }
+
             DrawCrown(spriteBatch, screenPos, drawColor); // корона на панцире, под клешнями («забота» ложится поверх)
-            DrawClawBack(spriteBatch, screenPos, drawColor);  // обе клешни перед панцирем; задняя — под передней
-            DrawClawFront(spriteBatch, screenPos, drawColor);
+
+            if (!BurrowBuried)
+            {
+                DrawClawBack(spriteBatch, screenPos, drawColor);  // обе клешни перед панцирем; задняя — под передней
+                DrawClawFront(spriteBatch, screenPos, drawColor);
+            }
+
+            if (!BurrowBuried)
+                DrawShellGrains(spriteBatch); // налипший песок поверх панциря, под аурой ярости
+
+            // «Ярость океана» — вторым проходом поверх всей туши
+            DrawRageOverlay(spriteBatch, screenPos, drawColor);
+
+            // Блик на мокром хитине и вспышки импактов — самым верхним слоем
+            SoAVfx.BeginAdditive(spriteBatch);
+            DrawShellGlint(spriteBatch);
+            DrawFlashes(spriteBatch);
+            SoAVfx.EndAdditive(spriteBatch);
 
             return false;
         }
@@ -139,10 +156,31 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             float lift = MathHelper.Lerp(StepLift, StepLiftFast, speedT) * scale;
             float lead = (StepLead + speed * StepLeadPerSpeed) * scale;
 
+            // Слой legs авторит не только сдвиг стойки: Aux расширяет расстановку стоп
+            // (приседы, упоры, рёв — «стойка шире»), Aux2 вообще запрещает переставлять лапы
+            // (под землёй и после обрушения в смерти краб больше не шагает).
+            LayerPose legsPose = AnimPose(LayerLegs);
+            float spreadMul = 1f + legsPose.Aux * LegSpreadPerAux;
+            bool stepLocked = legsPose.Aux2 > 0.5f;
+
+            // Бобб корпуса от РЕАЛЬНОЙ фазы походки: корпус оседает ровно тогда, когда лапы
+            // под ним переставляются. Раньше клип подпрыгивал в своём ритме (36 тиков), а ноги
+            // шагали в своём (12→6) — отсюда и брался эффект «плывёт, а не идёт».
+            if (_legs != null)
+            {
+                int swinging = 0;
+                foreach (Leg l in _legs)
+                {
+                    if (l.StepTimer > 0)
+                        swinging++;
+                }
+                _gaitBob = MathHelper.Lerp(_gaitBob, swinging / (float)_legs.Length, 0.25f);
+            }
+
             // Детект «в воздухе» с гистерезисом + привязкой к явным воздушным стадиям —
             // иначе мелкие подскоки/шаг-апы дёргают лапки между «стоит» и «висит»
             bool stateAir = (State == CrabState.JumpCrush && SubState >= 1f)
-                         || (State == CrabState.Burrow && SubState >= 2f)
+                         || (State == CrabState.Burrow && SubState >= BurrowSubSink) // с провала лапы уже не на грунте
                          || (State == CrabState.KnightCourt && SubState >= 2f);
             bool groundedNow = NPC.velocity.Y == 0f || NPC.collideY;
             if (!groundedNow || stateAir)
@@ -196,27 +234,35 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                         continue;
                     }
 
-                    float homeX = leg.Hip.X + sign * FootSpread[i] * scale;
+                    float homeX = leg.Hip.X + sign * FootSpread[i] * spreadMul * scale;
 
                     // Только что приземлились — ставим стопы сразу на место, без рывков-догоняний
                     if (landed)
                     {
                         float g = FindGroundY(homeX, leg.Hip.Y - 8f, FootProbeDepth, true);
-                        leg.Foot = float.IsNaN(g) ? new Vector2(homeX, leg.Hip.Y + 46f * scale) : new Vector2(homeX, g);
+                        leg.Foot = ClampToLegReach(leg.Hip,
+                            float.IsNaN(g) ? new Vector2(homeX, leg.Hip.Y + 46f * scale) : new Vector2(homeX, g),
+                            scale);
                         leg.StepTimer = 0;
                         continue;
                     }
 
-                    // Шаг в процессе — ведём стопу по дуге
+                    // Шаг в процессе — ведём стопу по дуге. Передняя пара поднимает стопу выше
+                    // задней: краб тащит зад, и это читается сразу.
                     if (leg.StepTimer > 0)
                     {
                         leg.StepTimer--;
-                        float t = 1f - leg.StepTimer / (float)stepDur;
+                        float t = 1f - leg.StepTimer / (float)leg.StepSpan;
                         Vector2 pos = Vector2.Lerp(leg.StepFrom, leg.StepTo, t);
-                        pos.Y -= (float)Math.Sin(t * Math.PI) * lift;
+                        pos.Y -= (float)Math.Sin(t * Math.PI) * lift * (1f - i * StepLiftRearBias);
                         leg.Foot = leg.StepTimer == 0 ? leg.StepTo : pos;
+                        if (leg.StepTimer == 0)
+                            OnFootPlanted(i, leg.Foot, speedT); // постановка стопы — звук, пыль, микро-тряска
                         continue;
                     }
+
+                    if (stepLocked)
+                        continue;
 
                     // Стоим: если стопа уехала слишком далеко от «дома» — шагаем
                     if (Math.Abs(leg.Foot.X - homeX) <= trigger)
@@ -226,42 +272,115 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     if (i > 0 && _legs[(i - 1) * 2 + s].StepTimer > 0)
                         continue;
 
+                    // Осторожность у обрыва: если впереди пола нет, передняя пара «щупает» край
+                    // укороченным забросом, а не замирает совсем
                     float targetX = homeX + moveDir * lead;
                     float targetGround = FindGroundY(targetX, leg.Hip.Y - 8f, FootProbeDepth, true);
                     if (float.IsNaN(targetGround))
-                        continue; // некуда ставить — стоим на месте
+                    {
+                        targetX = homeX + moveDir * lead * CliffProbeLeadCut;
+                        targetGround = FindGroundY(targetX, leg.Hip.Y - 8f, FootProbeDepth, true);
+                        if (float.IsNaN(targetGround))
+                            continue; // некуда ставить — стоим на месте
+                    }
 
                     leg.StepFrom = leg.Foot;
-                    leg.StepTo = new Vector2(targetX, targetGround);
+                    leg.StepTo = ClampToLegReach(leg.Hip, new Vector2(targetX, targetGround), scale);
                     leg.StepTimer = stepDur;
+                    leg.StepSpan = stepDur;
                 }
+            }
+
+            TryIdleMicroStep(scale, spreadMul, stepLocked, speed, airborne);
+            ScrapeFeetOnCoil(airborne);
+        }
+
+        // На взводе рывка стопы ПРОСКАЛЬЗЫВАЮТ назад по 1–2 px за тик: краб упирается и
+        // скребёт грунт. Пыль от этого сыплется по метке sweep_coil.
+        private void ScrapeFeetOnCoil(bool airborne)
+        {
+            if (airborne || _legs == null)
+                return;
+            bool coiling = State == CrabState.ClawSweep && SubState == 0f && Timer <= 10f;
+            if (!coiling)
+                return;
+
+            float slip = 1.5f * -NPC.spriteDirection;
+            foreach (Leg leg in _legs)
+            {
+                if (leg.StepTimer > 0)
+                    continue;
+                leg.Foot.X += slip;
             }
         }
 
-        // Squash & stretch тела: пружинит к позе от стадии + затухающий импульс приземления.
-        // Считается локально из синхронизированных стадии/скорости — по сети ничего не шлём.
+        // В покое стопы стояли намертво. Раз в 3–5 секунд одна случайная нога делает короткий
+        // переступ — стойка перестаёт быть мебелью, а стоит это одного таймера.
+        private void TryIdleMicroStep(float scale, float spreadMul, bool stepLocked, float speed, bool airborne)
+        {
+            if (stepLocked || airborne || speed > 0.5f || _legs == null)
+                return;
+
+            if (_idleStepTimer > 0)
+            {
+                _idleStepTimer--;
+                return;
+            }
+            _idleStepTimer = Main.rand.Next(IdleStepMinDelay, IdleStepMaxDelay);
+
+            Leg leg = _legs[Main.rand.Next(_legs.Length)];
+            if (leg.StepTimer > 0)
+                return;
+
+            float shift = Main.rand.NextFloatDirection() * IdleStepDistance * scale;
+            float targetX = leg.Foot.X + shift;
+            float ground = FindGroundY(targetX, leg.Hip.Y - 8f, FootProbeDepth, true);
+            if (float.IsNaN(ground))
+                return;
+
+            leg.StepFrom = leg.Foot;
+            leg.StepTo = ClampToLegReach(leg.Hip, new Vector2(targetX, ground), scale);
+            leg.StepTimer = leg.StepSpan = 16;
+        }
+
+        // Стопу нельзя ставить дальше, чем нога физически достаёт: иначе двухкостный IK
+        // клампится, колено распрямляется в спичку и лапка отрывается от грунта.
+        // Сначала поджимаем заброс по X, оставив стопу на найденной земле; если земля сама
+        // по себе ниже досягаемости (обрыв) — подтягиваем цель радиально к бедру.
+        private static Vector2 ClampToLegReach(Vector2 hip, Vector2 foot, float scale)
+        {
+            float max = (LegBoneUpperPx + LegBoneLowerPx) * scale * LegReachSafety;
+            Vector2 delta = foot - hip;
+            if (delta.LengthSquared() <= max * max)
+                return foot;
+
+            float dy = Math.Abs(delta.Y);
+            if (dy < max)
+            {
+                float maxDx = (float)Math.Sqrt(max * max - dy * dy);
+                return new Vector2(hip.X + Math.Sign(delta.X) * maxDx, foot.Y);
+            }
+            return hip + delta * (max / delta.Length());
+        }
+
+        // Squash & stretch тела: позу диктуют кейфреймовые клипы (канал Aux слоя body),
+        // здесь остаётся только физика — вытяжка на взлёте и импульс сжатия от приземления.
         private void UpdateBodySquash(bool airborne, bool landed)
         {
-            float targetPose = 0f;
-            if (State == CrabState.JumpCrush && SubState == 0f)
-                targetPose = 0.30f * MathHelper.Clamp(1f - Timer / JumpCrouchTicks, 0f, 1f); // присед сплющивает
-            else if (State == CrabState.CrushingGrip && SubState == 0f)
-                targetPose = 0.20f * MathHelper.Clamp(1f - Timer / GripWindupTicks, 0f, 1f); // изготовка перед выпадом
-            else if (State == CrabState.TsunamiClap)
-                targetPose = -0.18f * MathHelper.Clamp(1f - Timer / TsunamiWindupTicks, 0f, 1f); // привстаёт для хлопка
-            else if (State == CrabState.Dying)
-                targetPose = 0.35f; // оседает, «последний взгляд»
-            else if (_sulkTimer > 0)
-                targetPose = 0.22f; // «недовольство» — опускает корпус
-            else if (_proudPose && State == CrabState.Scuttle)
-                targetPose = -0.15f; // «гордая поза» — вытягивается
-            else if (airborne && NPC.velocity.Y < -1f)
-                targetPose = -0.22f; // на взлёте вытягивается
+            float targetPose = AnimPose(LayerBody).Aux;
+            if (airborne && NPC.velocity.Y < -1f)
+                targetPose -= 0.22f; // на взлёте вытягивается
             _squashPose = MathHelper.Lerp(_squashPose, targetPose, 0.2f);
 
+            // Плюха приземления — ДЕМПФИРОВАННАЯ ПРУЖИНА, а не чистая экспонента: после сжатия
+            // тело обязано один раз перелететь в вытяжку, иначе приземление «садится» мёртво.
             if (landed)
-                _squashImpact = 0.55f; // резкая плюха при приземлении
-            _squashImpact = MathHelper.Lerp(_squashImpact, 0f, 0.16f);
+            {
+                _squashImpact = 0.55f;
+                _squashImpactVel = 0f;
+            }
+            _squashImpactVel += -SquashSpringK * _squashImpact - SquashSpringDamp * _squashImpactVel;
+            _squashImpact += _squashImpactVel;
 
             _bodySquash = _squashPose + _squashImpact;
         }
@@ -274,17 +393,43 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (tex == null)
                 return;
 
+            LayerPose bodyPose = AnimPose(LayerBody);
             float sx = 1f + _bodySquash * BodySquashAmount;
             float sy = 1f - _bodySquash * BodySquashAmount;
-            Vector2 scale = new Vector2(NPC.scale * sx, NPC.scale * sy);
+            // «Дыхание жабр»: период 77 тиков не совпадает ни с одним клипом, амплитуда 0.008 —
+            // сознательно незаметно, подсознательно заметно
+            float gills = 1f + _breathBody * BreathBodyAmp;
+            Vector2 scale = new Vector2(NPC.scale * sx, NPC.scale * sy) * bodyPose.Scale * gills;
 
             // Держим «ноги» на месте: при сжатии центр опускаем на убыль полувысоты
             int frameCount = Math.Max(1, Main.npcFrameCount[Type]);
             float halfHeightWorld = tex.Height / frameCount / 2f * NPC.scale;
-            Vector2 bodyCenter = NPC.Center - new Vector2(0f, BodyLift);
-            Vector2 drawCenter = bodyCenter + new Vector2(0f, halfHeightWorld * (1f - sy));
+            Vector2 drawCenter = AnimatedBodyCenter() + new Vector2(0f, halfHeightWorld * (1f - sy));
 
-            DrawBodySprite(drawCenter, NPC.rotation, scale, drawColor, screenPos);
+            DrawBodySprite(drawCenter, AnimatedBodyRotation(), scale, drawColor, screenPos);
+        }
+
+        // Точка, ПРИКЛЕЕННАЯ к панцирю, в мировых координатах — с той же поправкой на squash &
+        // stretch и на scale-канал клипа, с какими рисуется само тело (см. DrawBody выше).
+        // Всё, что крепится к панцирю, обязано ехать вместе с его деформацией: при
+        // BodySquashAmount = 0.32 панцирь на плюхе раздаётся почти на треть ширины и проглатывает
+        // руки, а на вытяжке — отрывается от них. В покое (_bodySquash == 0, Scale == 1) даёт
+        // ровно то же, что AnimatedFacingToWorld, поэтому статичная поза не меняется.
+        private Vector2 BodyAnchorToWorld(Vector2 localOffset)
+        {
+            Texture2D tex = TextureAssets.Npc[Type].Value;
+            LayerPose bodyPose = AnimPose(LayerBody);
+            float sx = 1f + _bodySquash * BodySquashAmount;
+            float sy = 1f - _bodySquash * BodySquashAmount;
+
+            int frameCount = Math.Max(1, Main.npcFrameCount[Type]);
+            float halfHeightWorld = tex == null ? 0f : tex.Height / frameCount / 2f * NPC.scale;
+            Vector2 center = AnimatedBodyCenter() + new Vector2(0f, halfHeightWorld * (1f - sy));
+
+            float dirSign = NPC.spriteDirection * ClawDirFix;
+            Vector2 local = new Vector2(localOffset.X * dirSign * sx, localOffset.Y * sy)
+                            * NPC.scale * bodyPose.Scale;
+            return center + local.RotatedBy(AnimatedBodyRotation());
         }
 
         // Статичный портрет для бестиария: тело с позой покоя, ноги расставлены под бёдрами.
@@ -358,9 +503,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         private Vector2 HipWorld(int i, int sign, float scale)
         {
-            // Центр приподнятого тела (совпадает со сдвигом спрайта через DrawOffsetY)
-            Vector2 bodyCenter = NPC.Center - new Vector2(0f, BodyLift);
-            return bodyCenter + new Vector2(sign * HipLocal[i].X * scale, HipLocal[i].Y * scale).RotatedBy(NPC.rotation);
+            // Центр приподнятого тела со смещением кейфреймового слоя body;
+            // слой legs добавляет сдвиг стойки (стопы держит на земле IK)
+            LayerPose legsPose = AnimPose(LayerLegs);
+            Vector2 local = new Vector2(
+                sign * HipLocal[i].X * scale + legsPose.Offset.X * AnimDirSign * NPC.scale,
+                HipLocal[i].Y * scale + legsPose.Offset.Y * NPC.scale);
+            return AnimatedBodyCenter() + local.RotatedBy(AnimatedBodyRotation());
         }
 
         // Ищем верх первого «пола» под точкой. NaN — пола нет (воздух/вода/обрыв).

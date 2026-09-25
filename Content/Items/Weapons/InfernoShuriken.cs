@@ -106,7 +106,7 @@ namespace SoA.Content.Items.Weapons
             float spriteRot = rotation + MathHelper.PiOver4 * player.direction;
 
             Texture2D texNormal = ModContent.Request<Texture2D>("SoA/Content/Items/Weapons/InfernoShuriken").Value;
-            Texture2D texActive = ModContent.Request<Texture2D>("SoA/Content/Projectiles/InfernoShurikenProjectile_active").Value;
+            Texture2D texActive = ModContent.Request<Texture2D>("SoA/Content/Projectiles/InfernoShuriken/InfernoShurikenProjectile_active").Value;
             Vector2 origin = texNormal.Size() / 2f;
 
             float perfectPulse = inPerfect ? (0.8f + 0.2f * (float)Math.Sin(Main.GameUpdateCount * 0.4f)) : 1f;

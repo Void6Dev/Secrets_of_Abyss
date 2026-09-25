@@ -1,84 +1,25 @@
-using System;
+﻿using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
 using Terraria;
 using Terraria.ModLoader;
+using SoA.Common.Graphics.Animation;
 
 namespace SoA.Content.NPCs.Bosses.KingCrab
 {
     // Клешни Короля-краба — четырёхчастный риг: плечевой сегмент → локоть → предплечье →
     // запястье → клешня (основание + подвижный коготь). Рука решается двухкостным IK
-    // (как ноги), поза задаёт ПОЗИЦИЮ запястья, угол клешни и раскрытие пинцера —
-    // клешня может вести замах дугой, вытягиваться в выпаде и прижиматься к телу.
-    // Чистая косметика: поза считается локально на каждом клиенте из синхронизированных
-    // State/SubState/Timer/направления, по сети ничего не шлём и ai[] не тратим.
+    // (как ноги). ПОЗУ ЦЕЛИКОМ ДИКТУЮТ КЕЙФРЕЙМОВЫЕ КЛИПЫ (King_crab.Animation.cs):
+    // Offset слоя — сдвиг запястья от позы покоя, Rotation — подъём клешни, Aux — раскрытие
+    // пинцера. Здесь остались только геометрия рига и отрисовка.
+    // Чистая косметика: клипы тикаются локально из синхронизированного State/SubState/Timer,
+    // по сети ничего не шлём и ai[] не тратим.
     // Обе клешни рисуются ПЕРЕД панцирем: задняя — под передней.
     // Индекс: 0 — передняя (со стороны взгляда, активная в атаках), 1 — задняя.
     public partial class King_crab
     {
-        // --- Настройки рига (крути тут после добавления спрайта) ---
-        private const float ClawScale = 1f;          // клешни нарисованы 1:1 к панцирю
-        private const float ArmScale = 1.25f;        // сегменты руки относительно тела
-        private const float ClawShoulderX = 102.5f;  // вынос плеча вперёд от центра тела (в px спрайта тела)
-        private const float ClawShoulderY = -17.5f;  // высота плеча относительно центра тела (- вверх)
-        private const float ClawOpenAngle = 0.5f;    // максимальный разворот когтя при полном раскрытии (рад)
-        private const float ClawResponse = 0.3f;     // скорость подстройки позы к цели (0..1)
-        private const float ClawDirFix = 1f;         // = -1, если клешни смотрят в противоположную от тела сторону
-        private const float ClawBackRestBias = 0.45f; // разворот задней клешни наружу, чтобы не сливалась с передней
-        private const float ArmElbowSign = -1f;      // сторона сгиба локтя; поменяй знак, если гнётся не туда
-        private const float ClawSquashDip = 12f;     // насколько запястья проседают при плюхе тела (px на единицу squash)
-
-        // Кости руки: пивот→сустав в пикселях текстур сегментов
-        private const float ArmBoneUpperPx = 29f;    // плечо→локоть в KingCrabArmUpper.png
-        private const float ArmBoneLowerPx = 27f;    // локоть→запястье в KingCrabArmLower.png
-        private static readonly Vector2 ArmUpperPivot = new(12f, 13f); // плечевой сустав в KingCrabArmUpper.png
-        private static readonly Vector2 ArmLowerPivot = new(10f, 11f); // локтевой сустав в KingCrabArmLower.png
-
-        // Анкеры в пикселях текстур клешни. Авторская ориентация — краб смотрит влево (как King_crab.png).
-        // ClawBaseShoulder — «нарост» на клешне, которым она крепится к запястью руки.
-        private static readonly Vector2 ClawBaseShoulder = new(57f, 15f); // крепление к запястью (верх плечевого сегмента)
-        private static readonly Vector2 ClawBaseHinge = new(66f, 53f);    // шарнир подвижного когтя в base
-        private static readonly Vector2 ClawTipHinge = new(10f, 17f);     // тот же шарнир в tip
-
-        // --- Углы клешни (отклонение от авторской позы покоя, рад; + = клешня поднята вверх) ---
-        private const float ClawRestPitch = 0.15f;   // покой
-        private const float ClawIdleBob = 0.06f;     // амплитуда покачивания при ходьбе
-        private const float ClawSlamRaise = 1.1f;    // замах слэма вверх
-        private const float ClawSlamStrike = -0.55f; // удар слэма вниз
-        private const float ClawSweepRear = 0.8f;    // отвод перед рывком
-        private const float ClawSweepThrust = -0.4f; // выпад вперёд на рывке
-        private const float ClawTideRaise = 1.2f;    // воздеты при призыве прилива
-        private const float ClawTuck = -0.35f;       // поджаты (прыжок / под землёй)
-        private const float ClawGripReady = 0.4f;    // изготовка захлопа: приподнята и раскрыта
-        private const float ClawGripThrust = -0.35f; // выпад захлопа
-        private const float ClawCrownReach = 1.35f;  // задняя клешня тянется к короне
-        private const float ClawProudRaise = 0.55f;  // «гордая поза» на дистанции
-        private const float ClawSulkDroop = -0.3f;   // «недовольство» после промаха
-        private const float ClawDeathDroop = -0.4f;  // бессильно опущены при смерти
-
-        // --- Позиции запястья (от плеча, в px тела; +X = наружу вдоль своей стороны, +Y = вниз) ---
-        private static readonly Vector2 WristRest = new(10f, 16f);        // покой: клешня висит у панциря
-        private static readonly Vector2 WristSlamRaise = new(-8f, -46f);  // замах слэма: занесена над головой
-        private static readonly Vector2 WristSlamStrike = new(36f, 30f);  // удар слэма: вбита вперёд-вниз
-        private static readonly Vector2 WristSweepRear = new(-20f, 4f);   // отвод к телу перед рывком
-        private static readonly Vector2 WristSweepThrust = new(48f, 12f); // вытянута в рывке
-        private static readonly Vector2 WristTideRaise = new(4f, -42f);   // воздета при призыве прилива/рёве
-        private static readonly Vector2 WristTuck = new(0f, 20f);         // поджата (прыжок / под землёй)
-        private static readonly Vector2 WristGripReady = new(-12f, -14f); // изготовка захлопа: оттянута
-        private static readonly Vector2 WristGripThrust = new(54f, 14f);  // выпад захлопа: далеко вперёд
-        private static readonly Vector2 WristCrownReach = new(-2f, -40f); // задняя тянется вверх к короне
-        private static readonly Vector2 WristClapRaise = new(12f, -46f);  // замах хлопка: разведены вверх
-        private static readonly Vector2 WristClapStrike = new(-16f, 10f); // хлопок: сведены к центру перед телом
-        private static readonly Vector2 WristProud = new(6f, -22f);       // «гордая поза»
-        private static readonly Vector2 WristSulk = new(10f, 28f);        // «недовольство»: обвисла
-        private static readonly Vector2 WristDeath = new(16f, 36f);       // смерть: лежит на земле
-        private static readonly Vector2 WristVolley = new(14f, -2f);      // залп пузырей: приподнята вперёд
-        private static readonly Vector2 WristGuard = new(20f, 6f);        // передняя охраняет при созыве
-
-        // --- Раскрытие пинцера (0 — сомкнут, 1 — раскрыт) ---
-        private const float ClawRestOpen = 0.15f;
-        private const float ClawOpenMax = 1f;
+        // Все числа рига (плечо, кости руки, стойка клешни, анкеры) — в King_crab.Rig.cs
 
         private Asset<Texture2D> _clawBase;
         private Asset<Texture2D> _clawTip;
@@ -87,221 +28,76 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private readonly Vector2[] _clawWrist = new Vector2[2];
         private readonly float[] _clawPitch = new float[2];
         private readonly float[] _clawOpen = new float[2];
-        private bool _clawsInit;
+        private readonly Vector2[] _clawWristWorld = new Vector2[2]; // кэш для шлейфа (см. DrawClawGhost)
 
+        // На резких стадиях запястье ДОГОНЯЕТ целевую точку, а не встаёт в неё мгновенно
+        private static bool IsSharpStage(CrabState state, float sub) => state switch
+        {
+            CrabState.ClawSweep => true,
+            CrabState.CrushingGrip => sub >= 1f,
+            CrabState.OceanRage => sub is RageSubRam or RageSubCharge,
+            _ => false,
+        };
+
+        // Поза клешней целиком из кейфреймовых клипов; интерполяцию и сглаживание
+        // переходов делает AnimPlayer (easing ключей + кроссфейд при смене клипа).
+        // Сверху ложится вторичная физика: отставание запястья по инерции, дрожь после
+        // тяжёлого удара и дыхание со своим периодом.
+        // До первого тика аниматора (бестиарий) AnimPose даёт Identity = поза покоя.
         private void UpdateClaws()
         {
-            if (!_clawsInit)
-            {
-                _clawsInit = true;
-                for (int i = 0; i < 2; i++)
-                {
-                    _clawWrist[i] = WristRest;
-                    _clawPitch[i] = ClawRestPitch;
-                    _clawOpen[i] = ClawRestOpen;
-                }
-            }
-
+            bool sharp = IsSharpStage(State, SubState);
             for (int i = 0; i < 2; i++)
             {
-                (Vector2 wrist, float pitch, float open) = ClawPose(i);
-                wrist.Y += _bodySquash * ClawSquashDip; // плюха тела продавливает и руки
-                _clawWrist[i] = Vector2.Lerp(_clawWrist[i], wrist, ClawResponse);
-                _clawPitch[i] = MathHelper.Lerp(_clawPitch[i], pitch, ClawResponse);
-                _clawOpen[i] = MathHelper.Lerp(_clawOpen[i], open, ClawResponse);
+                LayerPose pose = AnimPose(i == 0 ? LayerClawFront : LayerClawBack);
+                Vector2 wrist = ClawWristRest + pose.Offset; // в координатах от центра тела
+                wrist.Y += _bodySquash * ClawSquashDip                  // плюха тела продавливает и руки
+                         + Math.Max(0f, _squashImpact) * ClawSquashDipExtra; // на приземлении — сильнее
+
+                // Дыхание клешней: период 76 тиков не совпадает ни с одним клипом, поэтому
+                // в стойке рисунок не повторяется. В атаках гасится _calmness.
+                wrist.Y += _breathClaw * (1f + i * 0.4f) * _calmness;
+
+                // Отставание на 1–3 тика: рука тяжёлая и на рывке не поспевает за телом
+                _clawLag[i] = sharp
+                    ? Vector2.Lerp(_clawLag[i], wrist, ClawLagRate)
+                    : wrist;
+                wrist = _clawLag[i];
+
+                // Дрожь после тяжёлого удара. Ключами такую частоту не записать —
+                // интерполяция её съест, поэтому это шум, а не кейфреймы.
+                if (_clawShake > 0)
+                {
+                    float amp = ClawShakeAmp * (_clawShake / (float)ClawShakeTicks);
+                    wrist += Main.rand.NextVector2Circular(amp, amp);
+                }
+
+                _clawWrist[i] = wrist;
+                _clawPitch[i] = ClawStanceRaise + pose.Rotation; // подъём от авторской позы текстуры
+                _clawOpen[i] = MathHelper.Clamp(ClawRestOpen + pose.Aux, 0f, 1f);
             }
         }
 
-        private static float Smooth(float t) => t * t * (3f - 2f * t);
-
-        // Целевая поза клешни по текущей стадии. Активна (телеграфит атаку) передняя клешня (idx 0);
-        // задняя держит опорную позу, только в приливе/прыжке/хлопке двигаются обе.
-        private (Vector2 wrist, float pitch, float open) ClawPose(int idx)
+        // Силуэт клешни для шлейфа: только основание пинцера в сохранённой мировой точке
+        // запястья. Полный риг руки шлейфу не нужен — важен читаемый контур целой туши,
+        // а не рой оторванных панцирей (именно так шлейф и выглядел раньше).
+        private void DrawClawGhost(SpriteBatch spriteBatch, int idx, Vector2 wristWorld, float bodyRot,
+            Vector2 screenPos, Color color)
         {
-            bool front = idx == 0;
-            Vector2 wrist = WristRest;
-            float pitch = ClawRestPitch;
-            float open = ClawRestOpen;
+            if (_clawBase?.Value == null)
+                return;
 
-            switch (State)
-            {
-                case CrabState.Scuttle:
-                    // Ходьба: клешни идут в противофазе шагам — лёгкий мах вперёд-назад
-                    float phase = _stepCycle * 0.2f + (front ? 0f : 1.5f);
-                    wrist = WristRest + new Vector2((float)Math.Sin(phase) * 3f, (float)Math.Cos(phase) * 2f);
-                    pitch = ClawRestPitch + (float)Math.Sin(phase) * ClawIdleBob;
-                    break;
+            Texture2D baseTex = _clawBase.Value;
+            int aimSign = idx == 0 ? 1 : -1;
+            bool flip = aimSign * (NPC.spriteDirection * ClawDirFix) > 0f;
+            float side = flip ? 1f : -1f;
+            float raise = _clawPitch[idx] + (idx == 1 ? ClawBackRestBias : 0f);
+            float rot = bodyRot - side * raise;
 
-                case CrabState.ClawSlam:
-                    if (front)
-                    {
-                        float p = 1f - Timer / ClawWindupTicks; // 0→1 за замах
-                        if (p < 0.6f) // замах: запястье уводит клешню дугой над головой
-                        {
-                            float t = Smooth(p / 0.6f);
-                            wrist = Vector2.Lerp(WristRest, WristSlamRaise, t);
-                            pitch = MathHelper.Lerp(ClawRestPitch, ClawSlamRaise, t);
-                            open = MathHelper.Lerp(ClawRestOpen, ClawOpenMax, t);
-                        }
-                        else if (p < 0.85f) // задержка на пике: дрожит от напряжения — читаемый телеграф
-                        {
-                            float tremble = Main.GameUpdateCount * 0.9f;
-                            wrist = WristSlamRaise + new Vector2((float)Math.Sin(tremble) * 1.5f, (float)Math.Cos(tremble * 1.3f) * 1.5f);
-                            pitch = ClawSlamRaise;
-                            open = ClawOpenMax;
-                        }
-                        else // удар: запястье вбивает клешню вперёд-вниз с ускорением + щелчок
-                        {
-                            float t = (p - 0.85f) / 0.15f;
-                            float tt = t * t;
-                            wrist = Vector2.Lerp(WristSlamRaise, WristSlamStrike, tt);
-                            pitch = MathHelper.Lerp(ClawSlamRaise, ClawSlamStrike, tt);
-                            open = MathHelper.Lerp(ClawOpenMax, 0f, tt);
-                        }
-                    }
-                    break;
-
-                case CrabState.ClawSweep:
-                    if (front)
-                    {
-                        if (SubState == 0f) // замах: клешня оттягивается к телу, пинцер раскрывается
-                        {
-                            float w = Smooth(1f - Timer / ClawSweepWindupTicks);
-                            wrist = Vector2.Lerp(WristRest, WristSweepRear, w);
-                            pitch = MathHelper.Lerp(ClawRestPitch, ClawSweepRear, w);
-                            open = MathHelper.Lerp(ClawRestOpen, ClawOpenMax, w);
-                        }
-                        else // рывок: выброшена во всю длину, к концу подбирается и смыкается
-                        {
-                            float t = 1f - Timer / ClawSweepDashTicks;
-                            wrist = Vector2.Lerp(WristSweepThrust, WristRest, Smooth(t) * 0.5f);
-                            pitch = MathHelper.Lerp(ClawSweepThrust, ClawRestPitch, t);
-                            open = MathHelper.Lerp(0f, ClawRestOpen, t);
-                        }
-                    }
-                    break;
-
-                case CrabState.TideCall: // обе воздеты, парят с медленным покачиванием
-                    {
-                        float hover = (float)Math.Sin(Main.GameUpdateCount * 0.08f + (front ? 0f : 0.9f)) * 3f;
-                        wrist = WristTideRaise + new Vector2(0f, hover);
-                        pitch = ClawTideRaise;
-                        open = ClawOpenMax * 0.6f;
-                    }
-                    break;
-
-                case CrabState.JumpCrush: // поджаты в прыжке
-                    wrist = WristTuck;
-                    pitch = ClawTuck;
-                    open = 0f;
-                    break;
-
-                case CrabState.BubbleVolley: // приподнята вперёд, пинцер «дышит» в такт залпу
-                    wrist = WristVolley;
-                    open = 0.35f + 0.25f * (float)Math.Sin(Main.GameUpdateCount * 0.35f);
-                    break;
-
-                case CrabState.CrushingGrip:
-                    if (front)
-                    {
-                        if (SubState == 0f) // изготовка: оттянута и раскрывается во всю ширь
-                        {
-                            float w = Smooth(1f - Timer / GripWindupTicks);
-                            wrist = Vector2.Lerp(WristRest, WristGripReady, w);
-                            pitch = MathHelper.Lerp(ClawRestPitch, ClawGripReady, w);
-                            open = MathHelper.Lerp(ClawRestOpen, ClawOpenMax, w);
-                        }
-                        else // выпад: рука выстреливает вперёд, захлоп ускоряется к щелчку
-                        {
-                            float t = 1f - Timer / GripLungeTicks;
-                            wrist = WristGripThrust;
-                            pitch = ClawGripThrust;
-                            open = MathHelper.Lerp(ClawOpenMax, 0f, t * t);
-                        }
-                    }
-                    break;
-
-                case CrabState.RoyalRoar: // обе воздеты и раскрыты, как перед приливом
-                    {
-                        float w = Smooth(1f - Timer / RoarWindupTicks);
-                        wrist = Vector2.Lerp(WristRest, WristTideRaise, w);
-                        pitch = MathHelper.Lerp(ClawRestPitch, ClawTideRaise, w);
-                        open = MathHelper.Lerp(ClawRestOpen, ClawOpenMax, w);
-                    }
-                    break;
-
-                case CrabState.CrownCommand:
-                    if (front) // передняя охраняет: выставлена вперёд
-                    {
-                        wrist = WristGuard;
-                        open = ClawOpenMax * 0.4f;
-                    }
-                    else // задняя тянется вверх к короне
-                    {
-                        wrist = WristCrownReach;
-                        pitch = ClawCrownReach;
-                    }
-                    break;
-
-                case CrabState.TsunamiClap:
-                    {
-                        float w = 1f - Timer / TsunamiWindupTicks;
-                        if (w < 0.85f) // замах: обе разведены вверх и раскрыты
-                        {
-                            float t = Smooth(w / 0.85f);
-                            wrist = Vector2.Lerp(WristRest, WristClapRaise, t);
-                            pitch = MathHelper.Lerp(ClawRestPitch, ClawTideRaise, t);
-                            open = MathHelper.Lerp(ClawRestOpen, ClawOpenMax, t);
-                        }
-                        else // хлопок: обе сшибаются к центру перед корпусом
-                        {
-                            float t = (w - 0.85f) / 0.15f;
-                            float tt = t * t;
-                            wrist = Vector2.Lerp(WristClapRaise, WristClapStrike, tt);
-                            pitch = MathHelper.Lerp(ClawTideRaise, ClawSlamStrike, tt);
-                            open = 0f;
-                        }
-                    }
-                    break;
-
-                case CrabState.Dying: // бессильно опущены, лежат на земле
-                    wrist = WristDeath;
-                    pitch = ClawDeathDroop;
-                    open = 0.05f;
-                    break;
-
-                default: // KnightCourt / Burrow — под землёй, поджаты
-                    wrist = WristTuck;
-                    pitch = ClawTuck;
-                    open = 0f;
-                    break;
-            }
-
-            // Характер поверх стадийной позы
-            if (State == CrabState.Scuttle)
-            {
-                if (_sulkTimer > 0) // «недовольство»: обвисли
-                {
-                    wrist = WristSulk;
-                    pitch = ClawSulkDroop;
-                    open = 0.05f;
-                }
-                else if (_proudPose) // «гордая поза»: подняты, лёгкое покачивание
-                {
-                    float sway = (float)Math.Sin(Main.GameUpdateCount * 0.05f + (front ? 0f : 0.8f));
-                    wrist = WristProud + new Vector2(0f, sway * 2f);
-                    pitch = ClawProudRaise + sway * 0.05f;
-                    open = 0.35f;
-                }
-            }
-            if (_crownCareTimer > 0 && !front && State != CrabState.CrownCommand) // придерживает корону
-            {
-                wrist = WristCrownReach;
-                pitch = ClawCrownReach;
-                open = 0.15f;
-            }
-
-            return (wrist, pitch, open);
+            Vector2 origin = flip ? new Vector2(baseTex.Width - ClawBaseShoulder.X, ClawBaseShoulder.Y) : ClawBaseShoulder;
+            SpriteEffects fx = flip ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+            Main.EntitySpriteDraw(baseTex, wristWorld - screenPos, null, color, rot, origin,
+                NPC.scale * ClawScale, fx, 0);
         }
 
         // Задняя клешня. Зовётся после DrawBody, до передней (лежит под ней).
@@ -319,12 +115,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             Texture2D baseTex = _clawBase.Value;
             Texture2D tipTex = _clawTip.Value;
-            float scale = NPC.scale * ClawScale;
+            Vector2 scale = new Vector2(NPC.scale * ClawScale) * AnimPose(idx == 0 ? LayerClawFront : LayerClawBack).Scale;
             float armScale = NPC.scale * ArmScale;
             int aimSign = idx == 0 ? 1 : -1; // передняя тянется вперёд, задняя — назад
             float dirSign = NPC.spriteDirection * ClawDirFix;
             float pitch = _clawPitch[idx];
             float open = _clawOpen[idx];
+            float bodyRot = AnimatedBodyRotation();
 
             // Экранная сторона клешни: -1 = левая (авторская ориентация текстур),
             // +1 = правая (текстуры зеркалятся горизонтально, как и панцирь)
@@ -333,25 +130,31 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // Подъём — отклонение от авторской позы; экранный знак зависит от стороны.
             // Задняя клешня чуть развёрнута наружу, чтобы не сливалась с передней
-            float raise = pitch - ClawRestPitch;
+            float raise = pitch;
             if (idx == 1)
                 raise += ClawBackRestBias;
-            float rot = NPC.rotation - side * raise;
+            float rot = bodyRot - side * raise;
             SpriteEffects fx = flip ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
 
-            Vector2 shoulderWorld = FacingToWorld(new Vector2(aimSign * ClawShoulderX, ClawShoulderY) * NPC.scale);
+            // Плечо приклеено к панцирю, поэтому берём его через BodyAnchorToWorld — оно обязано
+            // деформироваться вместе с телом, иначе рука отваливается на каждой плюхе
+            Vector2 shoulderLocal = new Vector2(ClawShoulderX, ClawShoulderY);
+            Vector2 shoulderWorld = BodyAnchorToWorld(new Vector2(aimSign * shoulderLocal.X, shoulderLocal.Y));
 
-            // Запястье из позы: клешне-локальные координаты (+X наружу) → мир
-            Vector2 wristLocal = _clawWrist[idx];
+            // Запястье задано от центра тела, поэтому от плеча его отделяет разность. Саму руку
+            // держим ЖЁСТКОЙ: с деформацией тела едет только точка крепления (плечо), иначе на
+            // плюхе клешню отбрасывало бы от корпуса на треть ширины панциря.
+            Vector2 wristFromShoulder = _clawWrist[idx] - shoulderLocal;
             Vector2 wristWorld = shoulderWorld
-                + new Vector2(aimSign * wristLocal.X * dirSign, wristLocal.Y).RotatedBy(NPC.rotation) * NPC.scale;
+                + new Vector2(aimSign * wristFromShoulder.X * dirSign, wristFromShoulder.Y).RotatedBy(bodyRot) * NPC.scale;
 
+            _clawWristWorld[idx] = wristWorld; // шлейфу нужна мировая точка запястья
             DrawArm(spriteBatch, shoulderWorld, wristWorld, flip, armScale, screenPos, drawColor);
 
             // Шарнир когтя едет вместе с клешнёй вокруг запястья
             Vector2 armTex = ClawBaseHinge - ClawBaseShoulder;
             Vector2 hingeWorld = wristWorld
-                + new Vector2(flip ? -armTex.X : armTex.X, armTex.Y).RotatedBy(rot) * scale;
+                + (new Vector2(flip ? -armTex.X : armTex.X, armTex.Y) * scale).RotatedBy(rot);
 
             // При зеркалировании XNA не отражает origin — отражаем сами, чтобы пивот остался на суставе
             Vector2 baseOrigin = flip ? new Vector2(baseTex.Width - ClawBaseShoulder.X, ClawBaseShoulder.Y) : ClawBaseShoulder;
@@ -366,6 +169,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         // Рука плечо→запястье: двухкостный IK, локоть через теорему косинусов (как у ног).
         // Рисуется ПОД клешнёй — её «нарост» ClawBaseShoulder накрывает запястный сустав.
+        // Сегменты круглые, поэтому при выносе запястья дальше суммы костей рука не клампится,
+        // а РАСТЯГИВАЕТСЯ: шары просто расходятся, и связка с клешнёй не рвётся на выпадах
+        // (вытянутые сегменты раньше маскировали разрыв собой, круглые — не маскируют).
         private void DrawArm(SpriteBatch spriteBatch, Vector2 shoulder, Vector2 wrist, bool flip, float armScale, Vector2 screenPos, Color drawColor)
         {
             Texture2D upper = _armUpper.Value;
@@ -373,7 +179,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             float l1 = ArmBoneUpperPx * armScale;
             float l2 = ArmBoneLowerPx * armScale;
 
-            float d = MathHelper.Clamp(Vector2.Distance(shoulder, wrist), Math.Abs(l1 - l2) + 0.1f, l1 + l2 - 0.1f);
+            float need = Vector2.Distance(shoulder, wrist);
+            float stretch = Math.Max(1f, need / (l1 + l2 - 0.1f));
+            l1 *= stretch;
+            l2 *= stretch;
+
+            float d = MathHelper.Clamp(need, Math.Abs(l1 - l2) + 0.1f, l1 + l2 - 0.1f);
             float baseAngle = (wrist - shoulder).ToRotation();
             float cosA = MathHelper.Clamp((l1 * l1 + d * d - l2 * l2) / (2f * l1 * d), -1f, 1f);
             float offset = (float)Math.Acos(cosA);
@@ -383,19 +194,20 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             float bendSign = ArmElbowSign * (flip ? -1f : 1f);
             Vector2 elbow = shoulder + new Vector2(l1, 0f).RotatedBy(baseAngle + bendSign * offset);
 
-            float upperRot = (elbow - shoulder).ToRotation();
-            float lowerRot = (wrist - elbow).ToRotation();
+            // Сегменты круглые: доворачивать их вдоль руки незачем — поворот гонял бы блик по кругу.
+            // А вот зеркалить надо ВМЕСТЕ С КЛЕШНЁЙ (тот же flip): блик на шарах направленный,
+            // и на отражённой стороне он обязан смотреть в ту же сторону, что и на клешне.
+            SpriteEffects fx = flip ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+            Vector2 upperOrigin = flip ? new Vector2(upper.Width - ArmUpperPivot.X, ArmUpperPivot.Y) : ArmUpperPivot;
+            Vector2 lowerOrigin = flip ? new Vector2(lower.Width - ArmLowerPivot.X, ArmLowerPivot.Y) : ArmLowerPivot;
 
-            // Сегмент нарисован вправо; если повёрнут влево — переворачиваем, чтобы блик остался сверху
-            SpriteEffects upperFx = Math.Cos(upperRot) < 0f ? SpriteEffects.FlipVertically : SpriteEffects.None;
-            SpriteEffects lowerFx = Math.Cos(lowerRot) < 0f ? SpriteEffects.FlipVertically : SpriteEffects.None;
-
-            spriteBatch.Draw(upper, shoulder - screenPos, null, drawColor, upperRot, ArmUpperPivot, armScale, upperFx, 0f);
-            spriteBatch.Draw(lower, elbow - screenPos, null, drawColor, lowerRot, ArmLowerPivot, armScale, lowerFx, 0f);
+            spriteBatch.Draw(upper, shoulder - screenPos, null, drawColor, 0f, upperOrigin, armScale, fx, 0f);
+            spriteBatch.Draw(lower, elbow - screenPos, null, drawColor, 0f, lowerOrigin, armScale, fx, 0f);
         }
 
         // «Лицевое» пространство → мир: отражаем X по направлению взгляда, наклоняем на угол тела,
         // сдвигаем к приподнятому центру тела (та же привязка, что у ног и панциря).
+        // БОЕВАЯ версия — без смещений клипов (зона короны, точки для пыли).
         private Vector2 FacingToWorld(Vector2 forwardOffset)
         {
             float fx = forwardOffset.X * (NPC.spriteDirection * ClawDirFix);

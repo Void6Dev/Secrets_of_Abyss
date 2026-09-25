@@ -1,0 +1,835 @@
+<title>Заглушки спрайтов SoA</title>
+<style>
+  :root {
+    --page:      #EEF1F6;
+    --card:      #FFFFFF;
+    --sunken:    #E4E9F2;
+    --ink:       #10141C;
+    --muted:     #616C82;
+    --hairline:  #D3DAE6;
+    --accent:    #3B4FD0;
+    --accent-dim:#E1E5FA;
+    --guide:     #B7238C;
+    --done:      #1E7A5A;
+    --done-dim:  #DDF0E8;
+    --checker-a: #E9EDF4;
+    --checker-b: #DCE2EC;
+
+    --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: Consolas, "Cascadia Mono", "SF Mono", ui-monospace, monospace;
+
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 18px; --s5: 28px; --s6: 44px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page:      #0E1219;
+      --card:      #161C27;
+      --sunken:    #10151E;
+      --ink:       #E6EBF4;
+      --muted:     #8D99AE;
+      --hairline:  #263042;
+      --accent:    #8496FF;
+      --accent-dim:#1C2440;
+      --guide:     #FF74D2;
+      --done:      #4FD1A0;
+      --done-dim:  #122A24;
+      --checker-a: #1B222E;
+      --checker-b: #141A24;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --page:      #0E1219;
+    --card:      #161C27;
+    --sunken:    #10151E;
+    --ink:       #E6EBF4;
+    --muted:     #8D99AE;
+    --hairline:  #263042;
+    --accent:    #8496FF;
+    --accent-dim:#1C2440;
+    --guide:     #FF74D2;
+    --done:      #4FD1A0;
+    --done-dim:  #122A24;
+    --checker-a: #1B222E;
+    --checker-b: #141A24;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: var(--s6) var(--s4) 96px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s6);
+  }
+
+  /* --- шапка --- */
+  header { display: flex; flex-direction: column; gap: var(--s3); }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(28px, 4.5vw, 42px);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; max-width: 62ch; color: var(--muted); }
+
+  .counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s2) var(--s4);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    padding-top: var(--s2);
+  }
+  .counts b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* --- предупреждение --- */
+  .callout {
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--guide);
+    background: var(--card);
+    padding: var(--s4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+  }
+  .callout h2 {
+    margin: 0;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+  }
+  .callout p { margin: 0; color: var(--muted); max-width: 70ch; font-size: 14px; }
+  .callout code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+
+  /* --- панель управления --- */
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--page);
+    border-bottom: 1px solid var(--hairline);
+    padding: var(--s3) 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4);
+    margin-bottom: calc(var(--s6) * -1 + var(--s4));
+  }
+  .ctl { display: flex; align-items: center; gap: var(--s2); }
+  .ctl > span {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .seg { display: flex; border: 1px solid var(--hairline); }
+  .seg button {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 11px;
+    background: var(--card);
+    color: var(--muted);
+    border: 0;
+    border-right: 1px solid var(--hairline);
+    cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+  .seg button:focus-visible, .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* --- секции --- */
+  section { display: flex; flex-direction: column; gap: var(--s4); }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s3);
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: var(--s2);
+  }
+  .sec-head h2 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+  }
+  .sec-head .n {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- карточка --- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s2) var(--s3);
+    padding: var(--s3) var(--s4);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .card-head h3 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+
+  .tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border: 1px solid var(--hairline);
+    color: var(--muted);
+  }
+  .tag.stub { color: var(--guide); border-color: color-mix(in srgb, var(--guide) 40%, var(--hairline)); }
+  .tag.done { color: var(--done); background: var(--done-dim); border-color: color-mix(in srgb, var(--done) 35%, var(--hairline)); }
+
+  .path {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+  }
+  .copy {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: none;
+    border: 1px solid var(--hairline);
+    color: var(--muted);
+    padding: 2px 7px;
+    cursor: pointer;
+  }
+  .copy:hover { color: var(--accent); border-color: var(--accent); }
+
+  .card-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 0;
+  }
+  @media (max-width: 780px) {
+    .card-body { grid-template-columns: minmax(0, 1fr); }
+    .meta { border-left: 0 !important; border-top: 1px solid var(--hairline); }
+  }
+
+  .stage {
+    padding: var(--s4);
+    overflow-x: auto;
+    background: var(--sunken);
+  }
+
+  .strip { display: flex; align-items: flex-end; gap: var(--s3); }
+  .grp { display: flex; flex-direction: column; gap: var(--s2); }
+  .grp-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .grp-frames { display: flex; gap: var(--s1); }
+  .frame { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .frame .num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pix {
+    image-rendering: pixelated;
+    background-repeat: no-repeat;
+    background-color: var(--checker-a);
+    background-image:
+      linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%),
+      linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%);
+    background-size: auto, 8px 8px, 8px 8px;
+    background-position: 0 0, 0 0, 4px 4px;
+    outline: 1px solid var(--hairline);
+    outline-offset: 0;
+  }
+  .pix.gridon::after {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-image:
+      repeating-linear-gradient(to right, color-mix(in srgb, var(--ink) 16%, transparent) 0 1px, transparent 1px var(--px)),
+      repeating-linear-gradient(to bottom, color-mix(in srgb, var(--ink) 16%, transparent) 0 1px, transparent 1px var(--px));
+  }
+
+  .meta {
+    border-left: 1px solid var(--hairline);
+    padding: var(--s4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s3);
+    min-width: 0;
+  }
+  .spec { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s1) var(--s3); }
+  .spec dt {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-top: 2px;
+  }
+  .spec dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    word-break: break-word;
+  }
+  .notes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--s2); }
+  .notes li {
+    font-size: 13px;
+    color: var(--muted);
+    padding-left: 12px;
+    position: relative;
+    line-height: 1.45;
+  }
+  .notes li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 8px;
+    width: 4px; height: 4px;
+    background: var(--hairline);
+  }
+  .notes li.warn { color: var(--ink); }
+  .notes li.warn::before { background: var(--guide); }
+  .notes code { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+  footer {
+    border-top: 1px solid var(--hairline);
+    padding-top: var(--s4);
+    color: var(--muted);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+  }
+  footer code { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translate(-50%, 12px);
+    background: var(--ink);
+    color: var(--page);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">SoA · Tide of Shadows · 14 августа 2026</div>
+    <h1>Заглушки спрайтов</h1>
+    <p class="lede">Пустые холсты правильного размера с разметкой кадров — чтобы рисовать поверх, а не вымерять сетку заново. Розовая рамка и номер в углу кадра вшиты в PNG: это мусор, его надо стереть.</p>
+    <div class="counts" id="counts"></div>
+  </header>
+
+  <div class="callout">
+    <h2>Пока в игре их не видно</h2>
+    <p>У большинства классов стоит <code>public override string Texture =&gt; "Terraria/Images/…"</code> — подмена ванильным спрайтом. Пока строка на месте, tModLoader берёт ванильную текстуру, а не соседний PNG. В карточке ниже указан файл и строка: снимай подмену по мере готовности рисунка, по одной.</p>
+  </div>
+
+  <div class="toolbar">
+    <div class="ctl">
+      <span>Зум</span>
+      <div class="seg" id="zoom"></div>
+    </div>
+    <div class="ctl">
+      <span>Сетка пикселей</span>
+      <div class="seg" id="gridtoggle"></div>
+    </div>
+    <div class="ctl">
+      <span>Тема</span>
+      <div class="seg" id="theme"></div>
+    </div>
+  </div>
+
+  <main id="sections"></main>
+
+  <footer>
+    <div><b>Общее правило:</b> PNG с альфой, фон полностью прозрачный, края без полупрозрачного сглаживания — пиксель либо есть, либо нет. Имена файлов и регистр букв менять нельзя, код ищет их буква в букву.</div>
+    <div>Не сошёлся размер после отрисовки — не подгоняй рисунок, скажи: подстроить код под лист дешевле.</div>
+    <div>Стены глубин (<code>Tidestone_wall</code>, <code>Tidesand_wall</code>, <code>Tidestone_wall_cracked</code>) заглушек не получили: у стен раскладка листа отличается от тайлов, и её надо сверять с ванильной стеной в коде. Заглушка с выдуманной сеткой хуже, чем её отсутствие.</div>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SPRITES = /*__DATA__*/{};
+
+const META = [
+  {
+    section: "Босс и свита",
+    items: [
+      {
+        id: "crabknight", title: "Рыцарь-краб", status: "done",
+        path: "Content/NPCs/Bosses/KingCrab/CrabKnight.png",
+        w: 68, h: 1152, fw: 68, fh: 48,
+        layout: "24 кадра одной колонкой, без отступов",
+        vanilla: null,
+        groups: [
+          [0, 1, "стойка"], [2, 7, "ход"], [8, 9, "замах щитом"], [10, 11, "удар щитом"],
+          [12, 14, "подготовка тарана"], [15, 17, "таран"], [18, 20, "оглушение"],
+          [21, 21, "взлёт"], [22, 22, "падение"], [23, 23, "приземление"]
+        ],
+        notes: [
+          { warn: true, text: "Лист уже полный, 24 кадра — доска врёт, что там шесть. Пункт draw_crabknight можно закрывать." },
+          { warn: true, text: "Ширина 68, а не 66 — в коде и в спеке стоит 66. Кадр по высоте сходится (1152 / 24 = 48), так что анимации играют; расходится только комментарий про рисунок 66×46 в CrabKnight.cs:139. Скажи — поправлю спеку под 68." },
+          { text: "Здесь он не заглушка, а образец: маг должен отличаться от него силуэтом и цветом, а не размером." }
+        ]
+      },
+      {
+        id: "crabmage", title: "Краб-маг", status: "stub",
+        path: "Content/NPCs/Bosses/KingCrab/CrabMage.png",
+        w: 66, h: 912, fw: 66, fh: 48,
+        layout: "19 кадров одной колонкой, без отступов",
+        vanilla: "лист паладина с бирюзовым тинтом",
+        groups: [
+          [0, 1, "стойка"], [2, 7, "ход"], [8, 10, "сбор залпа"], [11, 12, "выстрел"],
+          [13, 15, "канал гейзера"], [16, 18, "уход в песок"]
+        ],
+        notes: [
+          { text: "Бирюза: #2E7E8C тень, #46B0C4 средний, #8FE4F2 блик. Выше в посадке, чем паладин, одна клешня меньше и держит светящееся." },
+          { text: "Хитбокс 44×34 — корпус уже, чем у рыцаря." },
+          { text: "Канал гейзера обязан читаться иначе, чем залп: обе клешни вниз, корпус согнут." },
+          { text: "Уход в песок — три стадии погружения; всплытие играет тот же клип задом наперёд." },
+          { text: "Краб стоит на нижней грани кадра." }
+        ]
+      }
+    ]
+  },
+  {
+    section: "Враги озера",
+    items: [
+      {
+        id: "leech", title: "Пиявка", status: "stub",
+        path: "Content/NPCs/Enemies/MireLeech.png",
+        w: 24, h: 64, fw: 24, fh: 16,
+        layout: "4 кадра одной колонкой",
+        vanilla: "пиранья · MireLeech.cs:19",
+        groups: [[0, 3, "плавание, петля"]],
+        notes: [
+          { text: "ИИ пираньи: кадры крутятся по кругу без пауз." },
+          { text: "Хитбокс совпадает с кадром, отступов в листе нет." },
+          { text: "45 hp / 18 урона — мелочь, читаться должна силуэтом, не деталями." }
+        ]
+      },
+      {
+        id: "villager", title: "Утонувший житель", status: "stub",
+        path: "Content/NPCs/Enemies/DrownedVillager.png",
+        w: 18, h: 240, fw: 18, fh: 40,
+        layout: "6 кадров одной колонкой",
+        vanilla: "зомби · DrownedVillager.cs:21",
+        groups: [[0, 0, "стойка"], [1, 5, "ход"]],
+        notes: [
+          { text: "Рыбак с водой в одежде, а не зелёный зомби: бледный, в сети и робе." },
+          { text: "С него течёт вода, при смерти брызги — код уже это делает, рисовать не нужно." }
+        ]
+      }
+    ]
+  },
+  {
+    section: "Рыбалка",
+    items: [
+      {
+        id: "glowguppy", title: "Светлячковая гуппи", status: "stub",
+        path: "Content/Items/Fishing/GlowGuppy.png",
+        w: 20, h: 16, layout: "один кадр",
+        vanilla: "неоновая тетра · GlowGuppy.cs:13",
+        notes: [{ text: "Свечение по брюху — она ловится в Прибрежье и должна читаться на тёмной воде." }]
+      },
+      {
+        id: "grouper", title: "Бездонный групер", status: "stub",
+        path: "Content/Items/Fishing/AbyssGrouper.png",
+        w: 26, h: 20, layout: "один кадр",
+        vanilla: "эбонкой · AbyssGrouper.cs:13",
+        notes: [{ text: "Тёмная тяжёлая туша глубины, противовес гуппи." }]
+      },
+      {
+        id: "tackle", title: "Затонувшая снасть", status: "stub",
+        path: "Content/Items/Fishing/SunkenTackle.png",
+        w: 18, h: 18, layout: "один кадр",
+        vanilla: "жестянка · SunkenTackle.cs:12",
+        notes: [{ text: "Ржавый крючок и клок сети. Материал для удочки, падает пачками — силуэт должен быть узнаваем в куче." }]
+      },
+      {
+        id: "rod", title: "Удочка прилива", status: "stub",
+        path: "Content/Items/Fishing/TidecallerRod.png",
+        w: 24, h: 28, layout: "один кадр",
+        vanilla: "Fisher of Souls · TidecallerRod.cs:19",
+        notes: [
+          { warn: true, text: "По диагонали: рукоять в левом нижнем углу, кончик в правом верхнем. Нарисуешь иначе — замах будет смотреть не туда." },
+          { text: "Сила ловли 30, внутри биома +8." }
+        ]
+      },
+      {
+        id: "bobber", title: "Поплавок прилива", status: "stub",
+        path: "Content/Projectiles/Fishing/TideBobber.png",
+        w: 16, h: 16, layout: "один кадр",
+        vanilla: "деревянный поплавок · TideBobber.cs:11",
+        notes: [{ text: "Свет добавляется кодом — рисуй просто светлым, без нарисованного ореола." }]
+      },
+      {
+        id: "tidecrate", title: "Приливный ящик", status: "stub",
+        path: "Content/Items/Fishing/TideCrate.png",
+        w: 26, h: 26, layout: "один кадр",
+        vanilla: "океанский ящик · TideCrate.cs:17",
+        notes: [{ text: "Пара к ящику бездны: одна форма, разная отделка." }]
+      },
+      {
+        id: "abysscrate", title: "Ящик бездны", status: "stub",
+        path: "Content/Items/Fishing/AbyssCrate.png",
+        w: 26, h: 26, layout: "один кадр",
+        vanilla: "хардмодный океанский ящик · AbyssCrate.cs:17",
+        notes: [{ text: "Тот же ящик, окованный и со свечением — хардмодная версия должна читаться как апгрейд." }]
+      }
+    ]
+  },
+  {
+    section: "Боеприпасы",
+    items: [
+      {
+        id: "arrowitem", title: "Стрела бездны — предмет", status: "stub",
+        path: "Content/Items/Ammo/AbyssArrow.png",
+        w: 14, h: 32, layout: "один кадр",
+        vanilla: "Frostburn Arrow · AbyssArrow.cs:15",
+        notes: [{ text: "Остриём вверх, оперение внизу." }]
+      },
+      {
+        id: "arrowproj", title: "Стрела бездны — снаряд", status: "stub",
+        path: "Content/Projectiles/AbyssArrow/AbyssArrowProjectile.png",
+        w: 12, h: 32, layout: "один кадр",
+        vanilla: "Frostburn Arrow · AbyssArrowProjectile.cs:14",
+        notes: [
+          { warn: true, text: "Строго по центру листа: ванильный ИИ вращает спрайт вокруг центра кадра, смещение вбок даст болтанку. Белый пунктир на заглушке — эта самая ось." }
+        ]
+      }
+    ]
+  },
+  {
+    section: "Аксессуары",
+    items: [
+      {
+        id: "boots", title: "Ботинки прилива", status: "stub",
+        path: "Content/Items/Accessories/TideskimmerBoots.png",
+        w: 28, h: 24, layout: "один кадр",
+        vanilla: "Water Walking Boots · TideskimmerBoots.cs:16",
+        notes: [
+          { text: "Вид сбоку, носком вправо. Вид на игроке не нужен — слот вещей не занят." },
+          { text: "Награда за сундук капитана на затонувшем корабле, не из ящика." }
+        ]
+      },
+      {
+        id: "sigil1", title: "Печать давления I", status: "stub",
+        path: "Content/Items/Accessories/PressureSigil1.png",
+        w: 32, h: 32, layout: "один кадр",
+        vanilla: null,
+        notes: [{ text: "Простая оправа с одной вставкой — нижняя ступень линейки." }]
+      },
+      {
+        id: "sigil2", title: "Печать давления II", status: "stub",
+        path: "Content/Items/Accessories/PressureSigil2.png",
+        w: 32, h: 32, layout: "один кадр",
+        vanilla: null,
+        notes: [{ text: "Та же форма, насыщеннее." }]
+      },
+      {
+        id: "sigil3", title: "Печать давления III", status: "stub",
+        path: "Content/Items/Accessories/PressureSigil3.png",
+        w: 32, h: 32, layout: "один кадр",
+        vanilla: null,
+        notes: [{ text: "Та же форма, кристаллов больше." }]
+      },
+      {
+        id: "sigil4", title: "Печать давления IV", status: "stub",
+        path: "Content/Items/Accessories/PressureSigil4.png",
+        w: 32, h: 32, layout: "один кадр",
+        vanilla: null,
+        notes: [
+          { text: "Та же вещь, обросшая кристаллами и свечением." },
+          { warn: true, text: "Классов предметов ещё нет — имена файлов зафиксированы заранее, переименовывать не придётся." }
+        ]
+      }
+    ]
+  },
+  {
+    section: "Тайлы",
+    items: [
+      {
+        id: "cratetile", title: "Поставленные ящики", status: "stub",
+        path: "Content/Tiles/Other/TideCrate_tile.png",
+        w: 72, h: 36, layout: "4 × 2 клетки, клетка 16, шаг 18",
+        vanilla: "ванильный ящик · TideCrate_tile.cs:18",
+        notes: [
+          { text: "Два ящика по 2 × 2 клетки: слева приливный, справа ящик бездны." },
+          { text: "Номер в клетке на заглушке — просто её индекс, стирается вместе с рамкой." }
+        ]
+      },
+      {
+        id: "sealtile", title: "Печать прилива", status: "stub",
+        path: "Content/Tiles/Other/TideSeal_tile.png",
+        w: 106, h: 52, layout: "6 × 3 клетки, клетка 16, шаг 18",
+        vanilla: null,
+        notes: [
+          { text: "Многотайл 3 × 3 в двух состояниях: клетки 0–2 запечатана, 3–5 открыта." },
+          { warn: true, text: "На доске помечена отложенной: механики гейта нет, размер ещё может поменяться. Холст сделан на случай, если захочется именно её." }
+        ]
+      }
+    ]
+  }
+];
+
+const ZOOMS = [2, 3, 4, 6];
+let zoom = 3;
+let showGrid = false;
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function pixBox(item, frameIndex) {
+  const box = el("div", "pix" + (showGrid ? " gridon" : ""));
+  const fw = item.fw || item.w;
+  const fh = item.fh || item.h;
+  box.style.width = (fw * zoom) + "px";
+  box.style.height = (fh * zoom) + "px";
+  box.style.setProperty("--px", zoom + "px");
+  const url = SPRITES[item.id];
+  if (url) {
+    // картинка первым слоем, под ней шахматка прозрачности
+    box.style.backgroundImage =
+      "url(" + url + ")," +
+      "linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%)," +
+      "linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%)";
+    box.style.backgroundSize = (item.w * zoom) + "px " + (item.h * zoom) + "px, 8px 8px, 8px 8px";
+    box.style.backgroundPosition = "0 " + (-frameIndex * fh * zoom) + "px, 0 0, 4px 4px";
+  }
+  return box;
+}
+
+function buildStage(item) {
+  const stage = el("div", "stage");
+  const strip = el("div", "strip");
+  const fh = item.fh || item.h;
+  const frames = Math.round(item.h / fh);
+
+  if (frames <= 1) {
+    strip.appendChild(pixBox(item, 0));
+  } else {
+    const groups = item.groups && item.groups.length
+      ? item.groups
+      : [[0, frames - 1, frames + " кадров"]];
+    for (const [from, to, label] of groups) {
+      const g = el("div", "grp");
+      g.appendChild(el("div", "grp-label", label));
+      const row = el("div", "grp-frames");
+      for (let f = from; f <= to; f++) {
+        const cell = el("div", "frame");
+        cell.appendChild(pixBox(item, f));
+        cell.appendChild(el("div", "num", String(f)));
+        row.appendChild(cell);
+      }
+      g.appendChild(row);
+      strip.appendChild(g);
+    }
+  }
+  stage.appendChild(strip);
+  return stage;
+}
+
+function buildCard(item) {
+  const card = el("article", "card");
+
+  const head = el("div", "card-head");
+  head.appendChild(el("h3", null, item.title));
+  head.appendChild(el("span", "tag " + item.status, item.status === "done" ? "твой файл" : "заглушка"));
+
+  const path = el("div", "path");
+  path.appendChild(el("span", null, item.path));
+  const copy = el("button", "copy", "копировать");
+  copy.type = "button";
+  copy.addEventListener("click", () => copyPath(item.path));
+  path.appendChild(copy);
+  head.appendChild(path);
+  card.appendChild(head);
+
+  const body = el("div", "card-body");
+  body.appendChild(buildStage(item));
+
+  const meta = el("div", "meta");
+  const spec = el("dl", "spec");
+  const fh = item.fh || item.h;
+  const frames = Math.round(item.h / fh);
+  const rows = [
+    ["Лист", item.w + " × " + item.h],
+    ["Кадр", frames > 1 ? (item.fw || item.w) + " × " + fh + " · " + frames + " шт" : "один, " + item.w + " × " + item.h],
+    ["Раскладка", item.layout]
+  ];
+  if (item.vanilla) rows.push(["В игре", item.vanilla]);
+  for (const [k, v] of rows) {
+    spec.appendChild(el("dt", null, k));
+    spec.appendChild(el("dd", null, v));
+  }
+  meta.appendChild(spec);
+
+  if (item.notes && item.notes.length) {
+    const ul = el("ul", "notes");
+    for (const n of item.notes) {
+      const li = el("li", n.warn ? "warn" : null, n.text);
+      ul.appendChild(li);
+    }
+    meta.appendChild(ul);
+  }
+  body.appendChild(meta);
+  card.appendChild(body);
+  return card;
+}
+
+function render() {
+  const root = document.getElementById("sections");
+  root.innerHTML = "";
+  for (const sec of META) {
+    const s = el("section");
+    const h = el("div", "sec-head");
+    h.appendChild(el("h2", null, sec.section));
+    h.appendChild(el("span", "n", sec.items.length + " файл" + (sec.items.length === 1 ? "" : sec.items.length < 5 ? "а" : "ов")));
+    s.appendChild(h);
+    for (const item of sec.items) s.appendChild(buildCard(item));
+    root.appendChild(s);
+  }
+}
+
+function buildToolbar() {
+  const z = document.getElementById("zoom");
+  for (const v of ZOOMS) {
+    const b = el("button", null, v + "×");
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(v === zoom));
+    b.addEventListener("click", () => {
+      zoom = v;
+      [...z.children].forEach(c => c.setAttribute("aria-pressed", String(c.textContent === v + "×")));
+      render();
+    });
+    z.appendChild(b);
+  }
+
+  const g = document.getElementById("gridtoggle");
+  [["выкл", false], ["вкл", true]].forEach(([label, val]) => {
+    const b = el("button", null, label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(val === showGrid));
+    b.addEventListener("click", () => {
+      showGrid = val;
+      [...g.children].forEach(c => c.setAttribute("aria-pressed", String((c.textContent === "вкл") === showGrid)));
+      render();
+    });
+    g.appendChild(b);
+  });
+
+  const t = document.getElementById("theme");
+  [["тёмная", "dark"], ["светлая", "light"]].forEach(([label, val]) => {
+    const b = el("button", null, label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => {
+      document.documentElement.setAttribute("data-theme", val);
+      [...t.children].forEach(c => c.setAttribute("aria-pressed", String(c === b)));
+    });
+    t.appendChild(b);
+  });
+}
+
+function buildCounts() {
+  let stubs = 0, files = 0, frames = 0;
+  for (const sec of META) for (const it of sec.items) {
+    files++;
+    if (it.status === "stub") stubs++;
+    frames += Math.round(it.h / (it.fh || it.h));
+  }
+  const c = document.getElementById("counts");
+  const bits = [
+    ["Заглушек создано", stubs],
+    ["Файлов на странице", files],
+    ["Кадров всего", frames]
+  ];
+  for (const [k, v] of bits) {
+    const span = el("span");
+    span.appendChild(document.createTextNode(k + " "));
+    span.appendChild(el("b", null, String(v)));
+    c.appendChild(span);
+  }
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), 1600);
+}
+
+function copyPath(p) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(p).then(() => toast("Путь скопирован"), () => toast("Скопировать не вышло — выдели вручную"));
+  } else {
+    toast("Скопировать не вышло — выдели вручную");
+  }
+}
+
+buildToolbar();
+buildCounts();
+render();
+</script>

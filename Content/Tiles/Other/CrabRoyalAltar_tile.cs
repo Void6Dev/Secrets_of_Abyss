@@ -15,10 +15,19 @@ using SoA.Content.NPCs.Bosses.KingCrab;
 
 namespace SoA.Content.Tiles.Other
 {
-    // Королевский приливный алтарь 3x2: ПКМ с Королевской приманкой в инвентаре
+    // Королевский приливный алтарь 5x7: ПКМ с Королевской приманкой в инвентаре
     // приносит её в жертву и призывает Короля-краба
     public class CrabRoyalAltar_tile : ModTile
     {
+        private const int TileWidth = 5;
+        private const int TileHeight = 7;
+
+        // Ячейка чаши на листе (col 2, row 4) — источник света и искр
+        private const int BowlColumn = 2;
+        private const int BowlRow = 4;
+        private const int BowlFrameX = BowlColumn * 18;
+        private const int BowlFrameY = BowlRow * 18;
+
         private static readonly Vector3 LightColor = new(0.18f, 0.7f, 0.85f);
 
         public override void SetStaticDefaults()
@@ -35,12 +44,14 @@ namespace SoA.Content.Tiles.Other
             AddMapEntry(new Color(210, 170, 60), CreateMapEntryName());
 
             TileObjectData.newTile.CopyFrom(TileObjectData.Style2x2);
-            TileObjectData.newTile.Width = 3;
-            TileObjectData.newTile.Height = 2;
-            TileObjectData.newTile.Origin = new Point16(1, 1);
-            TileObjectData.newTile.CoordinateHeights = new int[] { 16, 16 };
+            TileObjectData.newTile.Width = TileWidth;
+            TileObjectData.newTile.Height = TileHeight;
+            TileObjectData.newTile.Origin = new Point16(TileWidth / 2, TileHeight - 1);
+            TileObjectData.newTile.CoordinateWidth = 16;
+            TileObjectData.newTile.CoordinatePadding = 2;
+            TileObjectData.newTile.CoordinateHeights = new int[] { 16, 16, 16, 16, 16, 16, 16 };
             TileObjectData.newTile.AnchorBottom = new AnchorData(
-                AnchorType.SolidTile | AnchorType.SolidWithTop, 3, 0);
+                AnchorType.SolidTile | AnchorType.SolidWithTop, TileWidth, 0);
             TileObjectData.newTile.WaterDeath = false;
             TileObjectData.newTile.WaterPlacement = LiquidPlacement.Allowed;
             TileObjectData.newTile.LavaPlacement = LiquidPlacement.NotAllowed;
@@ -75,11 +86,12 @@ namespace SoA.Content.Tiles.Other
             return true;
         }
 
-        // Вспышка над жемчужиной алтаря в момент жертвы
+        // Вспышка над чашей алтаря в момент жертвы
         private static void SummonEffects(int i, int j)
         {
             Tile tile = Main.tile[i, j];
-            Vector2 top = new Vector2(i - tile.TileFrameX / 18 + 1, j - tile.TileFrameY / 18) * 16f + new Vector2(8f, -4f);
+            Vector2 topLeftTile = new Vector2(i - tile.TileFrameX / 18, j - tile.TileFrameY / 18);
+            Vector2 top = (topLeftTile + new Vector2(BowlColumn, BowlRow)) * 16f + new Vector2(8f, -4f);
             for (int k = 0; k < 30; k++)
             {
                 Dust d = Dust.NewDustPerfect(top, DustID.TreasureSparkle,
@@ -100,8 +112,8 @@ namespace SoA.Content.Tiles.Other
         public override void ModifyLight(int i, int j, ref float r, ref float g, ref float b)
         {
             Tile tile = Main.tile[i, j];
-            // Светит только верхняя центральная ячейка (жемчужина), чтобы свет не троился
-            if (tile.TileFrameX != 18 || tile.TileFrameY != 0)
+            // Светит только ячейка чаши, чтобы свет не дублировался по всем 35 ячейкам
+            if (tile.TileFrameX != BowlFrameX || tile.TileFrameY != BowlFrameY)
                 return;
 
             float pulse = 0.85f + 0.15f * (float)Math.Sin(Main.GameUpdateCount * 0.045f + i);
@@ -113,7 +125,7 @@ namespace SoA.Content.Tiles.Other
         public override void DrawEffects(int i, int j, SpriteBatch spriteBatch, ref TileDrawInfo drawData)
         {
             Tile tile = Main.tile[i, j];
-            if (tile.TileFrameX != 18 || tile.TileFrameY != 0 || !Main.rand.NextBool(18))
+            if (tile.TileFrameX != BowlFrameX || tile.TileFrameY != BowlFrameY || !Main.rand.NextBool(18))
                 return;
 
             Dust d = Dust.NewDustDirect(new Vector2(i * 16, j * 16 - 4), 16, 8, DustID.TreasureSparkle);

@@ -32,7 +32,7 @@ namespace SoA.Content.Items.Placebles
         {
             CreateRecipe()
                 .AddIngredient(ModContent.ItemType<Tidesand>(), 25)
-                .AddIngredient(ModContent.ItemType<AbyssScale_small>(), 5)
+                .AddIngredient(ModContent.ItemType<Ichthyofang>(), 5)
                 .AddTile(TileID.Anvils)
                 .Register();
         }

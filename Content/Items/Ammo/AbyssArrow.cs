@@ -1,18 +1,14 @@
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
-using SoA.Content.Projectiles;
+using SoA.Content.Projectiles.AbyssArrow;
 using SoA.Content.Items.Materials;
 
 namespace SoA.Content.Items.Ammo
 {
-    // Стрелы из чешуи бездны — не теряют скорость под водой.
-    // Спрайт — ванильная Frostburn Arrow (placeholder до собственного арта).
     public class AbyssArrow : ModItem
     {
         private const int ArrowsPerScale = 25;
-
-        public override string Texture => "Terraria/Images/Item_" + ItemID.FrostburnArrow;
 
         public override void SetDefaults()
         {
@@ -34,7 +30,7 @@ namespace SoA.Content.Items.Ammo
         {
             CreateRecipe(ArrowsPerScale)
                 .AddIngredient(ItemID.WoodenArrow, ArrowsPerScale)
-                .AddIngredient(ModContent.ItemType<AbyssScale_small>())
+                .AddIngredient(ModContent.ItemType<Ichthyofang>())
                 .AddTile(TileID.Anvils)
                 .Register();
         }

@@ -1,13 +1,14 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
 using Terraria;
 using Terraria.Graphics.Shaders;
 using Terraria.ModLoader;
+using SoA.Common.Graphics.SandFormation;
 
 namespace SoA.Common.Graphics
 {
-    // Общие визуальные примитивы поверх готовых шейдеров мода (SoA:BeamGlow / SoA:ImpactRing)
+    // Общие визуальные примитивы поверх готовых шейдеров мода (SoA:CrabAura / SoA:CrabRing)
     // и переиспользуемых текстур. Инкапсулируют свап спрайтбатча в Immediate+Additive и обратно,
     // чтобы вызывающие (босс, снаряды) не дублировали Begin/End-бойлерплейт.
     public static class SoAVfx
@@ -47,12 +48,34 @@ namespace SoA.Common.Graphics
                 Main.GameViewMatrix.TransformationMatrix);
         }
 
-        // Свирл-свечение через SoA:BeamGlow (голубое «водяное» ядро). sizePx — диаметр в мире.
-        // Вызывать внутри BeginAdditive/EndAdditive.
-        public static void DrawGlow(SpriteBatch sb, Vector2 worldPos, float sizePx, float opacity)
+        // То же самое, но с точечной фильтрацией и в паре с EndPixelBatch — для
+        // пиксель-артных эффектов. Обычная пара Begin/EndAdditive оставляет сэмплер
+        // по умолчанию (линейный), от которого мелкие детали мылятся.
+        public static void BeginPixelImmediate(SpriteBatch sb)
         {
-            MiscShaderData shader = GameShaders.Misc["SoA:BeamGlow"];
+            sb.End();
+            sb.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend, SamplerState.PointClamp,
+                DepthStencilState.None, RasterizerState.CullCounterClockwise, null,
+                Main.GameViewMatrix.TransformationMatrix);
+        }
+
+        // Возврат в состояние ванильного батча сущностей
+        public static void EndPixelBatch(SpriteBatch sb)
+        {
+            sb.End();
+            sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, Main.DefaultSamplerState,
+                DepthStencilState.None, RasterizerState.CullCounterClockwise, null,
+                Main.GameViewMatrix.TransformationMatrix);
+        }
+
+        // Приливная аура через SoA:CrabAura (каустика расходящимися кольцами + пузыри).
+        // sizePx — диаметр в мире. Вызывать внутри BeginAdditive/EndAdditive.
+        // blend: 0 — холодная вода, 1 — мутный песок.
+        public static void DrawGlow(SpriteBatch sb, Vector2 worldPos, float sizePx, float opacity, float blend = 0f)
+        {
+            MiscShaderData shader = GameShaders.Misc["SoA:CrabAura"];
             shader.UseOpacity(opacity);
+            shader.Shader.Parameters["uBlend"]?.SetValue(blend);
             shader.Apply();
             Texture2D tex = Blob;
             Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, Color.White, 0f,
@@ -68,11 +91,33 @@ namespace SoA.Common.Graphics
                 tex.Size() / 2f, new Vector2(sizePx.X / tex.Width, sizePx.Y / tex.Height), SpriteEffects.None, 0);
         }
 
-        // Расширяющееся кольцо удара через SoA:ImpactRing. progress 0..1 = радиус кольца.
-        // blend: 0 — голубое, 1 — фиолетовое. Вызывать внутри BeginAdditive/EndAdditive.
+        // Плоский квад произвольного цвета С ПОВОРОТОМ — для вытянутых форм: трещин на грунте,
+        // линии рывка, столба света. Рисовать можно в любом батче: цвет с альфой даёт
+        // непрозрачную форму, цвет с A=0 — аддитивное свечение.
+        public static void DrawTintedQuad(SpriteBatch sb, Vector2 worldPos, Vector2 sizePx, float rotation, Color color)
+        {
+            Texture2D tex = Blob;
+            Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, color, rotation,
+                tex.Size() / 2f, new Vector2(sizePx.X / tex.Width, sizePx.Y / tex.Height), SpriteEffects.None, 0);
+        }
+
+        // Свап в аддитивный Immediate-режим с наложенным SoA:CrabRage. Шейдер остаётся
+        // привязанным на весь батч, поэтому все части босса, нарисованные следом, горят
+        // одинаково — одним Apply, без per-part настройки. Закрывать EndAdditive.
+        public static void BeginRageOverlay(SpriteBatch sb, float intensity)
+        {
+            BeginAdditive(sb);
+            MiscShaderData shader = GameShaders.Misc["SoA:CrabRage"];
+            shader.UseOpacity(intensity);
+            shader.Apply();
+        }
+
+        // Ударная волна через SoA:CrabRing: фронт с язычками песка, к концу расширения
+        // рассыпается в крупинки. progress 0..1 = радиус фронта.
+        // blend: 0 — пена, 1 — песок. Вызывать внутри BeginAdditive/EndAdditive.
         public static void DrawRing(SpriteBatch sb, Vector2 worldPos, float sizePx, float progress, float opacity, float blend = 0f)
         {
-            MiscShaderData shader = GameShaders.Misc["SoA:ImpactRing"];
+            MiscShaderData shader = GameShaders.Misc["SoA:CrabRing"];
             shader.UseOpacity(opacity);
             shader.Shader.Parameters["uProgress"]?.SetValue(progress);
             shader.Shader.Parameters["uBlend"]?.SetValue(blend);
@@ -80,6 +125,101 @@ namespace SoA.Common.Graphics
             Texture2D tex = Blob;
             Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, Color.White, 0f,
                 tex.Size() / 2f, new Vector2(sizePx / tex.Width, sizePx / tex.Height), SpriteEffects.None, 0);
+        }
+
+        // Шлейф скорости (SoA:SpeedRush) — конус штрихов позади разогнанного снаряда.
+        // worldPos — центр квада, rotation — направление движения (квад «остриём» вперёд),
+        // lengthPx/widthPx — габариты шлейфа в мире, intensity 0..1 — превышение порога.
+        // Вызывать внутри BeginAdditive/EndAdditive.
+        public static void DrawSpeedRush(SpriteBatch sb, Vector2 worldPos, float rotation,
+            float lengthPx, float widthPx, float intensity, float opacity)
+        {
+            MiscShaderData rush = GameShaders.Misc["SoA:SpeedRush"];
+            rush.UseOpacity(opacity);
+            rush.Shader.Parameters["uProgress"]?.SetValue(intensity);
+            rush.Apply();
+
+            Texture2D tex = Blob;
+            Main.EntitySpriteDraw(tex, worldPos - Main.screenPosition, null, Color.White, rotation,
+                tex.Size() / 2f, new Vector2(lengthPx / tex.Width, widthPx / tex.Height),
+                SpriteEffects.None, 0);
+        }
+
+        // Две дуги, бегущие вдоль оси: выгибаются в стороны от неё и несут по себе
+        // светящуюся голову. Используется как «энергия скорости» на древке копья.
+        // center — середина оси, rotation — её направление, lengthPx — длина,
+        // bowPx — насколько дуги отходят вбок, phase 0..1 — положение бегущей головы.
+        // Вызывать внутри BeginAdditive/EndAdditive.
+        public static void DrawTravellingArcs(SpriteBatch sb, Vector2 center, float rotation,
+            float lengthPx, float bowPx, float phase, Color color, float thickness = 5f)
+        {
+            const int Segments = 18;
+
+            Vector2 axis = rotation.ToRotationVector2();
+            Vector2 normal = new(-axis.Y, axis.X);
+            Texture2D tex = Blob;
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector2 previous = Vector2.Zero;
+                for (int i = 0; i <= Segments; i++)
+                {
+                    float t = i / (float)Segments;
+                    float bow = (float)System.Math.Sin(t * MathHelper.Pi);
+                    Vector2 point = center + axis * ((t - 0.5f) * lengthPx)
+                        + normal * (side * bow * bowPx);
+
+                    if (i == 0)
+                    {
+                        previous = point;
+                        continue;
+                    }
+
+                    // Бегущая голова: яркое пятно едет от пятки к острию, хвост за ним тускнеет
+                    float head = t - phase;
+                    head -= (float)System.Math.Floor(head);
+                    float glow = 0.25f + 0.75f * (float)System.Math.Pow(1f - head, 6f);
+
+                    Vector2 step = point - previous;
+                    float segmentLength = step.Length();
+                    Vector2 mid = previous + step * 0.5f;
+                    previous = point;
+
+                    Main.EntitySpriteDraw(tex, mid - Main.screenPosition, null, color * (glow * bow),
+                        step.ToRotation(), tex.Size() / 2f,
+                        new Vector2((segmentLength + 2f) / tex.Width, thickness / tex.Height),
+                        SpriteEffects.None, 0);
+                }
+            }
+        }
+
+        // Цвет приливного песка: тёплое зерно с холодным отливом, чтобы сборка читалась
+        // как часть приливной темы, а не как обычная пустынная пыль
+        public static readonly Color TideSand = new(214, 192, 142);
+
+        // Спрайт, собирающийся из песка. progress: 0 — россыпь зёрен, 1 — цельный предмет.
+        // Тот же вызов с убывающим progress рассыпает предмет обратно.
+        //
+        // Зёрна живут в SandFormationEffect: их тикает SandFormationSystem, здесь только
+        // выдаётся прогресс и отрисовка. key — стабильный локальный идентификатор владельца
+        // (обычно Projectile.whoAmI), seed — синхронное по сети число (Projectile.identity):
+        // по нему клиенты собирают одинаковую россыпь, не пересылая ни одной частицы.
+        // Батч не свапает: вызывать прямо из PreDraw.
+        public static void DrawSandForged(SpriteBatch sb, Texture2D tex, Vector2 drawPos,
+            Color color, float rotation, Vector2 origin, float scale, float progress,
+            int key = 0, int seed = 0)
+        {
+            SandFormationEffect effect = SandFormationEffect.Attach(key, tex, seed);
+            effect.FormationProgress = progress;
+            effect.Draw(sb, drawPos, color, rotation, origin, scale);
+        }
+
+        // Шум в слот s1 с wrap-сэмплером. Ставится ПОСЛЕ Apply: шейдер сам слот не занимает,
+        // но порядок повторяет FireTornadoProjectile — там это уже проверено в игре
+        public static void BindNoise()
+        {
+            Main.graphics.GraphicsDevice.Textures[1] = Noise;
+            Main.graphics.GraphicsDevice.SamplerStates[1] = SamplerState.LinearWrap;
         }
     }
 }

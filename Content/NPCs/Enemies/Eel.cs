@@ -100,7 +100,7 @@ namespace SoA.Content.NPCs.Enemies
 
         public override void ModifyNPCLoot(NPCLoot npcLoot)
         {
-            npcLoot.Add(ItemDropRule.Common(ModContent.ItemType<AbyssScale_small>(), 4, 1, 3));
+            npcLoot.Add(ItemDropRule.Common(ModContent.ItemType<Ichthyofang>(), 4, 1, 3));
         }
 
         private static readonly string[] GoreNames = ["EelGoreHead", "EelGoreBody", "EelGoreTail"];

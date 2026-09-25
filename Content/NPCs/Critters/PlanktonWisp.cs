@@ -9,7 +9,10 @@ namespace SoA.Content.NPCs.Critters
 {
     internal class PlanktonWisp : ModNPC
     {
-        private const int FrameCount = 3;
+        // Лист 14x64 — четыре кадра по 16 px. Число обязано делить высоту нацело:
+        // высота кадра считается целочисленно, и при 3 кадрах выборка (21 px)
+        // разъезжалась с рисунком, показывая куски сразу двух огоньков
+        private const int FrameCount = 4;
         private const double FlickerFrameSpeed = 8.0;
 
         public override void SetStaticDefaults()

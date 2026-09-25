@@ -1,9 +1,13 @@
 Mods: {
 	SoA: {
 		Items: {
-			AbyssScale_small: {
-				DisplayName: Abyss Scale (small)
-				Tooltip: Can be obtained from new ocean creatures
+			Ichthyofang: {
+				DisplayName: Ichthyofang
+				Tooltip:
+					'''
+					A barbed fang torn from the creatures of the black tide
+					Dropped by new ocean life and fished out of the abyss
+					'''
 			}
 
 			Aquasaw: {
@@ -25,24 +29,66 @@ Mods: {
 				Tooltip: Glowing ichor of a shadow jelly
 			}
 
-			LanternfinQuestFish: {
-				DisplayName: Lanternfin
+			LanternfishQuestFish: {
+				DisplayName: Lanternfish
 				Tooltip:
 					'''
-					{$CommonItemTooltip.QuestItem}
-					A fish that carries its own light through the black tide
+					'A fish that carries its own light through the black tide'
+					'Caught in the Tide of Shadows'
 					'''
 				QuestDescription:
 					'''
-					I saw a light under the dark water where no light should be! They call it the Lanternfin.
+					I saw a light under the dark water where no light should be! They call it the Lanternfish.
 					It swims in that shadowy tide near the jungle-side ocean. Bring it to me... alive and glowing!
 					'''
 				QuestCatchLocation: Caught in the Tide of Shadows.
 			}
 
-			ShadowSnapper: {
-				DisplayName: Shadow Snapper
-				Tooltip: Tastes like midnight
+			BlubFish: {
+				DisplayName: Blub Fish
+				Tooltip: Tastes like shit
+			}
+
+			GlowGuppy: {
+				DisplayName: Glowsilt Guppy
+				Tooltip:
+					'''
+					Keeps glowing long after it stops swimming
+					Bottles into a Shine Potion
+					'''
+			}
+
+			SunkenTackle: {
+				DisplayName: Sunken Tackle
+				Tooltip:
+					'''
+					Rusted hooks and rotten netting from the village on stilts
+					Still good for building a rod
+					'''
+			}
+
+			AbyssGrouper: {
+				DisplayName: Abyss Grouper
+				Tooltip: Heavy, cold and strangely filling
+			}
+
+			TidecallerRod: {
+				DisplayName: Tidecaller Rod
+				Tooltip:
+					'''
+					Its bobber lights the black water
+					Fishes better inside the Tide of Shadows
+					'''
+			}
+
+			TideCrate: {
+				DisplayName: Tide Crate
+				Tooltip: "{$CommonItemTooltip.RightClickToOpen}"
+			}
+
+			AbyssCrate: {
+				DisplayName: Abyss Crate
+				Tooltip: "{$CommonItemTooltip.RightClickToOpen}"
 			}
 
 			PlanktonWispItem: {
@@ -98,9 +144,10 @@ Mods: {
 				DisplayName: Structure Wand
 				Tooltip:
 					'''
-					Dev tool: saves a chunk of the world into a structure file
-					Click two corners of an area to export it
-					Right click to reset the first corner
+					Dev tool: saves any shape of the world into a structure file
+					Hold left click and drag to sweep an area
+					Pick select / add / erase in the left toolbar (or middle click)
+					Right click clears the selection, the wand button saves it
 					'''
 			}
 
@@ -180,17 +227,21 @@ Mods: {
 				DisplayName: Abyss Arrow
 				Tooltip:
 					'''
-					Slices through water without losing speed
-					Deals 20% more damage to enemies soaked in liquid
+					Underwater it keeps full speed and steers toward nearby prey
+					Out of water it drops fast and flies straight
 					'''
 			}
 
-			RoyalTrident: {
+			RoyalSpear: {
 				DisplayName: Royal Trident
 				Tooltip:
 					'''
-					The tyrant's claw, reforged into three points
-					Deals 25% more damage to enemies soaked in liquid
+					Soaks enemies; soaked targets take 25% more damage, swings faster underwater
+					Left click unleashes a fan of three rapid thrusts
+					Hold right click to charge a faster, stronger, farther throw.
+					Thrown trident creates a geyser, rides pierced enemies, and deals water damage.
+					Right click recalls it.
+					Damage fills the tide meter. Full meter makes the throw pull you to the trident, triggering a tidal burst on landing.
 					'''
 			}
 
@@ -198,8 +249,39 @@ Mods: {
 				DisplayName: Tideskimmer Boots
 				Tooltip:
 					'''
-					Grants the ability to walk on water
-					Increased movement speed on sand
+					Water no longer drags you down: you keep full speed while diving
+					Underwater every press of jump gives one short, low stroke
+					The deeper you dive, the more tidal force the boots store
+					Breaking the surface hurls you into the air like a breaching dolphin
+					Water landings and your own launch never deal fall damage
+					'''
+			}
+
+			PressureSigil1: {
+				DisplayName: Pressure Sigil I
+				Tooltip:
+					'''
+					Withstands the water below the first seal
+					Every seal past that will still crush you
+					'''
+			}
+
+			PressureSigil2: {
+				DisplayName: Pressure Sigil II
+				Tooltip: Withstands the water down to the second seal
+			}
+
+			PressureSigil3: {
+				DisplayName: Pressure Sigil III
+				Tooltip: Withstands the water down to the third seal
+			}
+
+			PressureSigil4: {
+				DisplayName: Pressure Sigil IV
+				Tooltip:
+					'''
+					Withstands the water below the last seal
+					Nothing in the tide can crush you now
 					'''
 			}
 
@@ -227,8 +309,14 @@ Mods: {
 			FireTornadoProjectile.DisplayName: Lava Maelstrom
 			TidesandBallFalling.DisplayName: Tidesand Ball
 			AbyssArrowProjectile.DisplayName: Abyss Arrow
-			RoyalTridentProjectile.DisplayName: Royal Trident
+			RoyalSpearProjectile.DisplayName: Royal Trident
+			RoyalSpearThrown.DisplayName: Royal Trident
+			RoyalTideWave.DisplayName: Royal Tide
+			RoyalTideBurst.DisplayName: Tidal Burst
 			KingCrabWave.DisplayName: King Crab Wave
+			TideBobber.DisplayName: Tidecaller Bobber
+			RoyalSpearCharge.DisplayName: Royal Spear Charge
+			RoyalSpearReforge.DisplayName: Royal Spear Reforge
 		}
 
 		Buffs: {
@@ -245,6 +333,11 @@ Mods: {
 			HellFireDebuff: {
 				DisplayName: Hellfire
 				Description: Burning intensely and slowed by 25%
+			}
+
+			CrushingPressureDebuff: {
+				DisplayName: Crushing Pressure
+				Description: The depth is squeezing the life out of you — rise, or seal the pressure out
 			}
 		}
 
@@ -263,12 +356,30 @@ Mods: {
 			CrabRoyalAltar_tile.MapEntry: Royal Tide Altar
 			ShadowCoral_tile.MapEntry: Shadow Coral
 			GlowShell_tile.MapEntry: Glowing Shell
+			Tidekelp_tile.MapEntry: Tidekelp
+			TideCrate_tile.MapEntry: Crate
+			TideSeal_tile.MapEntry: Tide Seal
+			TideSealBarrier_tile.MapEntry: Sealed Passage
 		}
 
-		Misc.AltarNeedsBait: The altar hungers for a royal offering...
+		Misc: {
+			AltarNeedsBait: The altar hungers for a royal offering...
+			KingCrabRageWarning: The tide churns — the King Crab will not let you leave his waters!
+			SealLocked1: The seal holds. The crown of the King Crab still rules this water.
+			SealLocked2: The seal holds. Nothing burns beyond the world yet.
+			SealLocked3: The seal holds. The jungle still keeps its bulb closed.
+			SealLocked4: The seal holds. The moon has not yet fallen.
+			SealOpened: The seal is spent. The way down is open.
+			SealBroken1: The first seal cracks — the tide gives up its deep.
+			SealBroken2: The second seal cracks — the trench draws breath.
+			SealBroken3: The third seal cracks — the pinch of the trench yields.
+			SealBroken4: The last seal cracks — the Heart of the Abyss lies open.
+			PressureDeath: "{0} was crushed by the weight of the deep"
+		}
 
 		NPCs: {
-			CrabKnight.DisplayName: Crab Knight
+			CrabKnight.DisplayName: Crab Paladin
+			CrabMage.DisplayName: Crab Magus
 
 			Eel: {
 				DisplayName: Eel
@@ -277,12 +388,22 @@ Mods: {
 
 			TideCrab: {
 				DisplayName: Tide Crab
-				Bestiary: A small scavenger of the shadowed shore. Its shell has darkened to match the dunes it calls home.
+				Bestiary: A small scavenger of the shadowed tide. Its shell has darkened to match the dunes it calls home.
 			}
 
 			ShadowJelly: {
 				DisplayName: Shadow Jelly
 				Bestiary: It drifts through the black water like a sunken lantern. Its glowing ichor is prized by those who dare the tide.
+			}
+
+			MireLeech: {
+				DisplayName: Mire Leech
+				Bestiary: It thrived when the stilt village drowned. Now it owns the still water, and it remembers the taste of the people who built the piers.
+			}
+
+			DrownedVillager: {
+				DisplayName: Drowned Villager
+				Bestiary: Every night they wade back to the huts they raised, water still pouring from their sleeves, still looking for the catch they never brought home.
 			}
 
 			PlanktonWisp: {
@@ -292,8 +413,102 @@ Mods: {
 
 			King_crab: {
 				DisplayName: King Crab
-				Bestiary: The tyrant of the forgotten shores. Its cracked crown has ruled the tides since before the seas had names.
+				Bestiary: The tyrant of the shadowed tide. Its cracked crown has ruled the tides since before the seas had names.
 			}
+		}
+
+		Configs: {
+			SoADevConfig: {
+				DisplayName: SoA Dev Tools
+
+				EnableDevMenu: {
+					Label: Enable dev menu
+					Tooltip: Fullscreen to-do list for the mod author, opened with the tilde key. Click a line to cross it out.
+				}
+			}
+		}
+
+		Keybinds.DevMenu.DisplayName: Dev menu
+
+		StructureTool: {
+			Toolbar: {
+				Select: {
+					Title: Area selection
+					Description:
+						'''
+						Marks an area to copy
+						or to save as a structure.
+						'''
+					LeftClick: LMB – start selection
+					RightClick: RMB – clear
+				}
+
+				Add: {
+					Title: Add to selection
+					Description:
+						'''
+						Extends the current selection
+						with another area.
+						'''
+					LeftClick: LMB – add area
+					RightClick: RMB – clear
+				}
+
+				Erase: {
+					Title: Erase from selection
+					Description:
+						'''
+						Cuts an area out of the
+						current selection.
+						'''
+					LeftClick: LMB – cut area
+					RightClick: RMB – clear
+				}
+
+				Save: {
+					Title: Save structure
+					Description:
+						'''
+						Opens the save window
+						for the current selection.
+						'''
+					LeftClick: LMB – open window
+				}
+			}
+
+			Dialog: {
+				Title: Save structure
+				NameLabel: Name:
+				FiltersLabel: Ignored tiles:
+				Cancel: Cancel
+				Save: Save
+			}
+
+			Filters: {
+				Walls: Background walls
+				Liquids: Liquids
+				Grass: Grass
+				Cobwebs: Cobwebs
+				Vines: Vines
+				LightSources: Light sources
+			}
+
+			Chat: {
+				NothingSelected: Nothing selected: hold left click and drag first.
+				SelectionCleared: Selection cleared.
+				Snapped: Selection snapped to whole objects (+{0} tiles).
+				OverLimit: Selection {0}x{1} is over the {2}x{3} limit. Trim it with erase mode.
+				EnterName: Enter a name first.
+				Saved: Saved {0}x{1}, {2} tiles: {3}
+			}
+		}
+
+		DevMenu: {
+			Title: SoA — to do
+			Hint: LMB cycles status, RMB steps back, click a header to fold, click the counter to hide done, F5 reloads, F2 screenshots, Esc closes
+			HiddenSuffix: "  — done are hidden"
+			ShotSaved: Screenshot noted on the board: {0}
+			ShotFailed: Screenshot failed: {0}
 		}
 	}
 }

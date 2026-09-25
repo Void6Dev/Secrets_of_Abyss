@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Terraria;
 using Terraria.ModLoader;
@@ -9,25 +10,166 @@ using SoA.Content.Water;
 
 namespace SoA.Content.Worldgen
 {
-    // Какой океан стал Приливом Теней: -1 — левый, 1 — правый, 0 — биома в мире нет.
-    // Ставится при генерации, сохраняется в мире и шлётся клиентам
+    // Место будущей печати: узкий проход между зонами, который перекроется,
+    // пока не выполнено условие прогресса соответствующей ступени
+    public struct TideSealSite
+    {
+        public int Step;     // 1 — Королевский Краб, 2 — Стена Плоти, 3 — Плантера, 4 — Мунлорд
+        public int X, Y, Width, Height;
+    }
+
+    // Обмеры биома, снятые при генерации. Границы и глубины зон у каждого мира свои,
+    // поэтому их нельзя вычислить на лету — только сохранить и раздать клиентам
     public class TideOfShadowsWorldData : ModSystem
     {
-        public static int OceanSide;
+        public const int ZoneCount = 5;
 
-        public override void ClearWorld() => OceanSide = 0;
+        public static int OceanSide;   // -1 — левый океан, 1 — правый, 0 — биома нет
+        public static int EdgeX;       // столбец у края мира, от него отсчитываются ширины
+        public static int WaterTopY;
+
+        // Нижняя граница и вылет вглубь суши для каждой зоны. Вылет растёт с глубиной:
+        // чаша завалена под сушу, и прямоугольником биом описать нельзя
+        public static readonly int[] ZoneBottomY = new int[ZoneCount];
+        public static readonly int[] ZoneWidth = new int[ZoneCount];
+
+        public static List<TideSealSite> SealSites = new();
+
+        // Направление вглубь суши от края мира
+        public static int InlandDir => OceanSide == -1 ? 1 : -1;
+
+        public static bool HasBounds => OceanSide != 0 && ZoneBottomY[ZoneCount - 1] > WaterTopY;
+
+        // В какой зоне точка: 0 — вне биома, 1..5 по возрастанию глубины
+        public static int ZoneAt(int tileX, int tileY)
+        {
+            if (!HasBounds)
+                return 0;
+
+            int offset = (tileX - EdgeX) * InlandDir;
+            if (offset < 0 || tileY > ZoneBottomY[ZoneCount - 1] + 24)
+                return 0;
+
+            for (int zone = 0; zone < ZoneCount; zone++)
+            {
+                if (tileY <= ZoneBottomY[zone])
+                    return offset <= ZoneWidth[zone] ? zone + 1 : 0;
+            }
+            return 0;
+        }
+
+        public override void ClearWorld()
+        {
+            OceanSide = 0;
+            EdgeX = 0;
+            WaterTopY = 0;
+            Array.Clear(ZoneBottomY);
+            Array.Clear(ZoneWidth);
+            SealSites = new List<TideSealSite>();
+        }
 
         public override void SaveWorldData(TagCompound tag)
         {
-            if (OceanSide != 0)
-                tag["tideOceanSide"] = OceanSide;
+            if (OceanSide == 0)
+                return;
+
+            tag["tideOceanSide"] = OceanSide;
+            tag["tideEdgeX"] = EdgeX;
+            tag["tideWaterTopY"] = WaterTopY;
+            tag["tideZoneBottomY"] = new List<int>(ZoneBottomY);
+            tag["tideZoneWidth"] = new List<int>(ZoneWidth);
+
+            var seals = new List<int>();
+            foreach (TideSealSite site in SealSites)
+            {
+                seals.Add(site.Step);
+                seals.Add(site.X);
+                seals.Add(site.Y);
+                seals.Add(site.Width);
+                seals.Add(site.Height);
+            }
+            tag["tideSeals"] = seals;
         }
 
-        public override void LoadWorldData(TagCompound tag) => OceanSide = tag.GetInt("tideOceanSide");
+        public override void LoadWorldData(TagCompound tag)
+        {
+            OceanSide = tag.GetInt("tideOceanSide");
+            EdgeX = tag.GetInt("tideEdgeX");
+            WaterTopY = tag.GetInt("tideWaterTopY");
 
-        public override void NetSend(BinaryWriter writer) => writer.Write((sbyte)OceanSide);
+            CopyInto(tag.GetList<int>("tideZoneBottomY"), ZoneBottomY);
+            CopyInto(tag.GetList<int>("tideZoneWidth"), ZoneWidth);
 
-        public override void NetReceive(BinaryReader reader) => OceanSide = reader.ReadSByte();
+            SealSites = new List<TideSealSite>();
+            var seals = tag.GetList<int>("tideSeals");
+            if (seals == null)
+                return;
+
+            for (int i = 0; i + 4 < seals.Count; i += 5)
+            {
+                SealSites.Add(new TideSealSite
+                {
+                    Step = seals[i], X = seals[i + 1], Y = seals[i + 2],
+                    Width = seals[i + 3], Height = seals[i + 4]
+                });
+            }
+        }
+
+        private static void CopyInto(IList<int> source, int[] target)
+        {
+            if (source == null)
+                return;
+            for (int i = 0; i < target.Length && i < source.Count; i++)
+                target[i] = source[i];
+        }
+
+        public override void NetSend(BinaryWriter writer)
+        {
+            writer.Write((sbyte)OceanSide);
+            writer.Write(EdgeX);
+            writer.Write(WaterTopY);
+            for (int i = 0; i < ZoneCount; i++)
+            {
+                writer.Write(ZoneBottomY[i]);
+                writer.Write(ZoneWidth[i]);
+            }
+
+            writer.Write((byte)SealSites.Count);
+            foreach (TideSealSite site in SealSites)
+            {
+                writer.Write((byte)site.Step);
+                writer.Write(site.X);
+                writer.Write(site.Y);
+                writer.Write((byte)site.Width);
+                writer.Write((byte)site.Height);
+            }
+        }
+
+        public override void NetReceive(BinaryReader reader)
+        {
+            OceanSide = reader.ReadSByte();
+            EdgeX = reader.ReadInt32();
+            WaterTopY = reader.ReadInt32();
+            for (int i = 0; i < ZoneCount; i++)
+            {
+                ZoneBottomY[i] = reader.ReadInt32();
+                ZoneWidth[i] = reader.ReadInt32();
+            }
+
+            SealSites = new List<TideSealSite>();
+            int count = reader.ReadByte();
+            for (int i = 0; i < count; i++)
+            {
+                SealSites.Add(new TideSealSite
+                {
+                    Step = reader.ReadByte(),
+                    X = reader.ReadInt32(),
+                    Y = reader.ReadInt32(),
+                    Width = reader.ReadByte(),
+                    Height = reader.ReadByte()
+                });
+            }
+        }
     }
 
     // Счётчик тайлов биома: обновляется движком каждый тик сцены
@@ -65,10 +207,15 @@ namespace SoA.Content.Worldgen
             }
         }
 
+        // Два слоя: дальняя гряда в самой глубине кадра и море со скалами перед ней.
+        // Порядок именно такой — гряда рисуется первой и идёт медленнее, поэтому
+        // на ходу между слоями появляется параллакс, а горизонт моря перекрывает
+        // её низ и оставляет над водой только вершины
         public override int ChooseFarTexture()
-            => BackgroundTextureLoader.GetBackgroundSlot(Mod, "Common/Backgrounds/TideOfShadows_background");
+            => BackgroundTextureLoader.GetBackgroundSlot(Mod, "Common/Backgrounds/TideOfShadows_background2");
 
-        public override int ChooseMiddleTexture() => -1;
+        public override int ChooseMiddleTexture()
+            => BackgroundTextureLoader.GetBackgroundSlot(Mod, "Common/Backgrounds/TideOfShadows_background");
 
         public override int ChooseCloseTexture(ref float scale, ref double parallax, ref float a, ref float b) => -1;
     }
@@ -92,30 +239,25 @@ namespace SoA.Content.Worldgen
 
         public override bool IsBiomeActive(Player player)
         {
-            bool surfaceLevel = player.ZoneOverworldHeight || player.ZoneSkyHeight;
-            if (!surfaceLevel)
-                return false;
-
             int tileX = (int)(player.Center.X / 16f);
-            bool nearLeftEdge = tileX < OceanEdgeTiles;
-            bool nearRightEdge = tileX > Main.maxTilesX - OceanEdgeTiles;
+            int tileY = (int)(player.Center.Y / 16f);
 
-            // Основной путь: игрок в океане, помеченном при генерации.
-            // Дно с Tidesand может быть далеко за пределами сканирования сцены,
-            // поэтому на счётчик тайлов тут полагаться нельзя
-            int side = TideOfShadowsWorldData.OceanSide;
-            if ((side == -1 && nearLeftEdge) || (side == 1 && nearRightEdge))
+            // Основной путь: точные границы, снятые при генерации. Проверка по слою
+            // здесь недопустима — зоны 3-5 лежат ниже поверхности, и биом бы гас
+            if (TideOfShadowsWorldData.ZoneAt(tileX, tileY) != 0)
                 return true;
 
-            // Запасной путь для построек руками: много Tidesand/Tidestone рядом у любого океана
+            // Запасной путь для построек руками: много Tidesand/Tidestone у любого океана
+            bool nearLeftEdge = tileX < OceanEdgeTiles;
+            bool nearRightEdge = tileX > Main.maxTilesX - OceanEdgeTiles;
+            if (!nearLeftEdge && !nearRightEdge)
+                return false;
+
             var counts = ModContent.GetInstance<TideOfShadowsTileCount>();
-            bool enoughTiles = counts.TidesandCount + counts.TidestoneCount >= RequiredTidesand;
-            return enoughTiles && (nearLeftEdge || nearRightEdge);
+            return counts.TidesandCount + counts.TidestoneCount >= RequiredTidesand;
         }
 
-        public override void SpecialVisuals(Player player, bool isActive)
-        {
-            player.ManageSpecialBiomeVisuals(TideOfShadowsSky.Key, isActive, player.Center);
-        }
+        // SpecialVisuals нет намеренно: сумрак над Приливом Теней (TideOfShadowsSky) убран —
+        // он затемнял экран, а биому это не нужно ни в бою, ни вне его
     }
 }

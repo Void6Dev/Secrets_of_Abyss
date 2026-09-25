@@ -25,7 +25,7 @@ namespace SoA.Content.Items.BossSummons
         public override void AddRecipes()
         {
             CreateRecipe()
-                .AddIngredient(ModContent.ItemType<AbyssScale_small>(), 5)
+                .AddIngredient(ModContent.ItemType<Ichthyofang>(), 5)
                 .AddIngredient(ItemID.PinkPearl, 1)
                 .AddTile(TileID.Anvils)
                 .Register();
