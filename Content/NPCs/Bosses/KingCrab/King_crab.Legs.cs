@@ -40,6 +40,29 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             public int StepSpan = StepDuration; // длина ИМЕННО ЭТОГО шага: скорость могла
         }                                       // измениться, пока стопа летит по дуге
 
+        private bool _visualsTicked;
+
+        // Вся визуальная симуляция: клипы, IK ног и клешней, корона, пружины, частицы, шлейф.
+        // Раньше она крутилась в PreDraw, то есть по кадрам отрисовки, а не по тикам: вне экрана
+        // или на пропущенных при просадке кадрах поза замирала, ноги потом «телепортировались»,
+        // а клип отставал от боевого Timer'а — клешня опускалась уже после удара.
+        // Зовётся из ModSystem.PostUpdateNPCs, когда позиция NPC за тик уже окончательная
+        internal void TickVisuals()
+        {
+            _visualsTicked = true;
+            UpdateAnimation(); // кейфреймовый слой первым: риг ниже читает его позы
+            UpdateLegs();
+            UpdateClaws();
+            UpdateCrown();
+            UpdateRings();
+            UpdateBursts();
+            UpdateRageAura();
+            UpdateDelayedFx();
+            UpdateFlashesAndCracks();
+            UpdateLiveliness();
+            RecordAfterimage();
+        }
+
         public override bool PreDraw(SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor)
         {
             _legUpper ??= ModContent.Request<Texture2D>("SoA/Content/NPCs/Bosses/KingCrab/KingCrabLegUpper", AssetRequestMode.ImmediateLoad);
@@ -57,17 +80,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return false;
             }
 
-            UpdateAnimation(); // кейфреймовый слой первым: риг ниже читает его позы
-            UpdateLegs();
-            UpdateClaws();
-            UpdateCrown();
-            UpdateRings();
-            UpdateBursts();
-            UpdateRageAura();
-            UpdateDelayedFx();
-            UpdateFlashesAndCracks();
-            UpdateLiveliness();
-            RecordAfterimage();
+            // Симуляцию визуала тикает KingCrabVisualTicker, раз в игровой тик; здесь только
+            // отрисовка. Первый кадр может прийти раньше первого тика (NPC пришёл по сети)
+            if (!_visualsTicked)
+                TickVisuals();
 
             // Трещины на грунте — единственное тёмное, что рисует босс: это повреждение
             // поверхности, оно обязано быть темнее грунта. Всё остальное СВЕТИТСЯ:

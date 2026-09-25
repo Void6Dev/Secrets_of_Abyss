@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Microsoft.Xna.Framework;
 using Terraria;
@@ -98,6 +99,17 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float RoarPushSpeed = 9f;
 
         private const int KnightsPerCall = 2;
+
+        // Набор атак по фазам: фаза 1 — медленные тяжёлые удары, фаза 2 добавляет к ним своё (реф)
+        private static readonly CrabState[] Phase1Attacks =
+        {
+            CrabState.ClawSlam, CrabState.ClawSweep, CrabState.BubbleVolley, CrabState.Burrow,
+        };
+        private static readonly CrabState[] Phase2Attacks =
+        {
+            CrabState.JumpCrush, CrabState.TideCall, CrabState.CrushingGrip, CrabState.TsunamiClap,
+            CrabState.RoyalRoar, CrabState.CrownCommand,
+        };
 
         // Свита фазы 2: паладин и маг выходят прямо в кат-сцене, отсчёт по её таймеру
         private const int EscortWarnTicks = 95;        // бугры на местах выхода
@@ -219,6 +231,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             || (State == CrabState.KnightCourt && SubState >= 1f && SubState < 2f)
             || (State == CrabState.CourtDuel && SubState >= 1f && SubState < 2f);
 
+        // Король идёт сквозь тайлы: подкоп, гвардия, свита, спуск сквозь настил.
+        // В этот момент нельзя входить ни в ярость, ни в кат-сцену смены фазы: обе возвращают
+        // столкновения с тайлами, а вернуть их туше, сидящей в толще грунта, — значит замуровать
+        // её там. Оба решения принимает сервер, поэтому серверного noTileCollide достаточно
+        private bool PassingThroughTiles => NPC.noTileCollide;
+
         // ТОЛЬКО ДЛЯ ОТРИСОВКИ. Ваниль рисует NPC поверх тайлов, поэтому на стадии провала
         // голова и клешни просвечивали сквозь грунт: туша уже под землёй, а видна целиком.
         // Прячем её, как только панцирь ушёл под кромку ямы, — сам нырок при этом виден.
@@ -254,7 +272,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // момент нырка синхронизирован через SubState, так что клиенты возьмут её сами
         private float _burrowSurfaceY;
 
-        // Чисто серверная кухня выбора атак
+        // Чисто серверная кухня выбора атак.
+        // «Мешок»: за цикл каждая атака фазы выпадает не больше одного раза, затем мешок
+        // наполняется заново. Рандом решает только порядок: трёх залпов подряд и слэма,
+        // которого не было минуту, больше не бывает
+        private readonly List<CrabState> _attackBag = new();
+        private bool _attackBagPhase2; // для какой фазы собран мешок
         private int _crownCommandCooldown;
         private bool _phase2Announced; // кат-сцена смены фазы уже отыграна — второй раз не входим
         private CrabState _lastAttack = CrabState.Scuttle;
@@ -332,8 +355,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // Кат-сцена смены фазы перебивает всё: пока она идёт, бой на паузе.
             // Решает только сервер — иначе клиенты войдут в стейт на своём тике и разъедутся.
+            // Сквозь грунт кат-сцену не начинаем: дождёмся, пока король выберется наружу
             if (Main.netMode != NetmodeID.MultiplayerClient && Phase2 && !_phase2Announced
-                && State != CrabState.Dying && State != CrabState.Phase2Transition)
+                && State != CrabState.Dying && State != CrabState.Phase2Transition && !PassingThroughTiles)
                 BeginPhase2Transition();
 
             if (State != CrabState.Phase2Transition)
@@ -451,31 +475,32 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private void ChooseAttack(Player target)
         {
             float dist = NPC.Distance(target.Center);
-            Span<CrabState> pool = stackalloc CrabState[10];
-            int count = 0;
 
-            // Фаза 1 — медленные тяжёлые удары (реф)
-            if (dist < MeleeRange) pool[count++] = CrabState.ClawSlam;
-            if (dist < SweepRange) pool[count++] = CrabState.ClawSweep;
-            pool[count++] = CrabState.BubbleVolley;
-            if (dist > MeleeRange) pool[count++] = CrabState.Burrow;
-
-            // Фаза 2 — добавляются прыжок, прилив, захлоп и гвардия
-            if (Phase2)
+            // Новая фаза — новый цикл: мешок фазы 1 не должен откладывать атаки фазы 2
+            if (_attackBagPhase2 != Phase2)
             {
-                pool[count++] = CrabState.JumpCrush;
-                pool[count++] = CrabState.TideCall;
-                if (dist < MeleeRange * 1.6f) pool[count++] = CrabState.CrushingGrip;
-                pool[count++] = CrabState.TsunamiClap;
-                if (CountBubbles() >= RoarMinBubbles && count < 10) pool[count++] = CrabState.RoyalRoar;
-                if (_crownCommandCooldown <= 0 && KnightsAlive() == 0 && count < 10)
-                    pool[count++] = CrabState.CrownCommand;
+                _attackBag.Clear();
+                _attackBagPhase2 = Phase2;
+            }
+            if (_attackBag.Count == 0)
+                RefillAttackBag();
+
+            Span<CrabState> ready = stackalloc CrabState[Phase1Attacks.Length + Phase2Attacks.Length];
+            int count = CollectReadyAttacks(dist, ready, _lastAttack);
+
+            // Всё, что осталось в мешке, сейчас не подходит по дистанции или условию — цикл окончен
+            if (count == 0)
+            {
+                RefillAttackBag();
+                count = CollectReadyAttacks(dist, ready, _lastAttack);
             }
 
-            // Не повторяем предыдущую атаку, пока есть выбор
-            CrabState next = pool[Main.rand.Next(count)];
-            for (int tries = 0; tries < 4 && next == _lastAttack && count > 1; tries++)
-                next = pool[Main.rand.Next(count)];
+            // Подходит только повтор предыдущей атаки — лучше повтор, чем стоять
+            if (count == 0)
+                count = CollectReadyAttacks(dist, ready, CrabState.Scuttle);
+
+            CrabState next = count > 0 ? ready[Main.rand.Next(count)] : CrabState.BubbleVolley;
+            _attackBag.Remove(next);
 
             _lastAttack = next;
             _attackConnected = false;
@@ -485,6 +510,47 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (next == CrabState.TideCall)
                 StateData = Main.rand.Next(TideWallCount);
         }
+
+        // Добивает мешок атаками текущей фазы. То, что в прошлом цикле так и не подошло
+        // по дистанции, уже лежит в мешке и второй раз не добавляется
+        private void RefillAttackBag()
+        {
+            AddMissingAttacks(Phase1Attacks);
+            if (Phase2)
+                AddMissingAttacks(Phase2Attacks);
+        }
+
+        private void AddMissingAttacks(CrabState[] attacks)
+        {
+            foreach (CrabState attack in attacks)
+            {
+                if (!_attackBag.Contains(attack))
+                    _attackBag.Add(attack);
+            }
+        }
+
+        private int CollectReadyAttacks(float dist, Span<CrabState> ready, CrabState skip)
+        {
+            int count = 0;
+            foreach (CrabState attack in _attackBag)
+            {
+                if (attack != skip && AttackReady(attack, dist))
+                    ready[count++] = attack;
+            }
+            return count;
+        }
+
+        // Условия атак: дистанция до цели и то, что атаке нужно для смысла
+        private bool AttackReady(CrabState attack, float dist) => attack switch
+        {
+            CrabState.ClawSlam => dist < MeleeRange,
+            CrabState.ClawSweep => dist < SweepRange,
+            CrabState.Burrow => dist > MeleeRange,
+            CrabState.CrushingGrip => dist < MeleeRange * 1.6f,
+            CrabState.RoyalRoar => CountBubbles() >= RoarMinBubbles,
+            CrabState.CrownCommand => _crownCommandCooldown <= 0 && KnightsAlive() == 0,
+            _ => true,
+        };
 
         private float AttackDuration(CrabState attack) => attack switch
         {
@@ -520,7 +586,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SubState = subState;
             StateData = 0f;
             // Спуск сквозь настил отменяется любой сменой стейта: иначе его окно доживёт до
-            // подкопа и вернёт столкновения с тайлами посреди подземного хода
+            // подкопа и вернёт столкновения с тайлами посреди подземного хода.
+            // Столкновения при этом возвращаем сразу: раньше атака, выбранная посреди спуска,
+            // оставляла noTileCollide включённым, ApplyGravity на нём выходит сразу — и король
+            // уходил сквозь мир с той скоростью, с которой падал
+            if (_dropThrough > 0)
+                NPC.noTileCollide = false;
             _dropThrough = 0;
             NPC.netUpdate = true;
         }
@@ -636,6 +707,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             ScreenPunch(7f, 20, new Vector2(-NPC.spriteDirection, 0f));
             SpawnFlash(at, 320f, Color.White, 3);
             SpawnCracks(NPC.Bottom, 3, 80f);
+            SpawnImpactDebris(at, 14, 1f, -NPC.spriteDirection); // отлетает назад, от стены
+            SpawnDustCloud(at, 90f, 5);
+            SpawnSparks(at, 10, 8f);
+            ImpactLight(at, ImpactLightColor, 1.8f);
             SoundEngine.PlaySound(SoundID.Item14 with { Pitch = -0.5f }, at);
 
             for (int i = 0; i < 18; i++)
@@ -754,6 +829,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 PlayClip("tide_release", once: true);
                 HitStop(5);
                 ScreenPunch(6f, 20, Vector2.UnitY);
+                SpawnWaterSpray(NPC.Bottom, 30, 13f, -Vector2.UnitY, 0.5f);
+                ImpactLight(NPC.Center, TideLightColor, 2.2f, 18);
             }
 
             if (Main.netMode != NetmodeID.MultiplayerClient)
@@ -899,6 +976,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     NPC.velocity.Y = -JumpLaunchSpeed;
                     SoundEngine.PlaySound(SoundID.Item45 with { Pitch = -0.8f }, NPC.Center);
                     SpawnSandBurst(NPC.Bottom - new Vector2(70f, 8f), 140, 12, 18, 4f, 2f, 7f);
+                    SpawnDustCloud(NPC.Bottom, 180f, 6, 0.9f);
                     EnterSubState(1f, 200f); // сверху висит предохранитель по времени
                 }
                 return;
@@ -1117,6 +1195,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 PlayClip("burrow_land", once: true); // иначе садился с поджатыми клешнями
                 HitStop(5);
                 SpawnCracks(NPC.Bottom, 3, 90f);
+                SpawnImpactDebris(NPC.Bottom, 12, 1f);
+                SpawnDustCloud(NPC.Bottom, 200f, 8);
             }
             ReturnToScuttle();
         }
@@ -1271,8 +1351,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         {
             _phase2Announced = true;
 
-            // Фаза может застать короля под землёй или в прыжке — вернуть ему столкновения
-            // обязательно, иначе кат-сцена проиграется где-то в толще мира
+            // Под землёй сюда не попадаем (см. PassingThroughTiles в AI), так что столкновения
+            // уже на месте; строка — страховка на случай нового стейта, забывшего о них
             NPC.noTileCollide = false;
             NPC.velocity.X = 0f;
             EnterState(CrabState.Phase2Transition, Phase2TransitionTicks);

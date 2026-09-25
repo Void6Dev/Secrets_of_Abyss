@@ -17,7 +17,7 @@ namespace SoA.Content.Items.BossSummons
         {
             Item.width = 20;
             Item.height = 22;
-            Item.maxStack = 9999;
+            Item.maxStack = 1; // многоразовая: алтарь её не забирает
             Item.rare = ItemRarityID.Purple;
             Item.value = Item.sellPrice(silver: 20);
         }

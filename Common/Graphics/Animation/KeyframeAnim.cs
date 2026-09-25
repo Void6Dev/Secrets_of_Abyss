@@ -12,9 +12,9 @@ namespace SoA.Common.Graphics.Animation
     public enum EaseMode
     {
         Linear,
-        Smooth,   // SmoothStep — дефолт
-        EaseIn,   // разгон (медленный старт)
-        EaseOut,  // торможение (медленный финиш)
+        Smooth,   // сплайн через соседние ключи — дефолт (см. AnimClip.BuildTangents)
+        EaseIn,   // разгон: старт с места, к следующему ключу приходит на полной скорости (удар)
+        EaseOut,  // торможение: срыв с места на полной скорости, у следующего ключа замирает
         Snap      // держит позу до следующего ключа, затем скачок
     }
 
@@ -53,6 +53,34 @@ namespace SoA.Common.Graphics.Animation
 
         // Ослабление к Identity: t=0 — ничего, t=1 — поза целиком (конверт входа/выхода реакций)
         public static LayerPose Faded(in LayerPose p, float t) => Lerp(Identity, p, t);
+
+        // --- Поканальный доступ: сплайн и инерция кроссфейда считают все 7 каналов одинаково ---
+        public const int ChannelCount = 7;
+
+        public float Get(int channel) => channel switch
+        {
+            0 => Rotation,
+            1 => Offset.X,
+            2 => Offset.Y,
+            3 => Scale.X,
+            4 => Scale.Y,
+            5 => Aux,
+            _ => Aux2,
+        };
+
+        public void Set(int channel, float value)
+        {
+            switch (channel)
+            {
+                case 0: Rotation = value; break;
+                case 1: Offset.X = value; break;
+                case 2: Offset.Y = value; break;
+                case 3: Scale.X = value; break;
+                case 4: Scale.Y = value; break;
+                case 5: Aux = value; break;
+                default: Aux2 = value; break;
+            }
+        }
     }
 
     public struct Keyframe
@@ -60,6 +88,11 @@ namespace SoA.Common.Graphics.Animation
         public float Time;     // тик внутри клипа (60/с)
         public LayerPose Pose;
         public EaseMode Ease;  // сглаживание на пути К СЛЕДУЮЩЕМУ ключу
+
+        // Касательные сплайна, единицы канала за тик. Считает AnimClip.BuildTangents,
+        // хранятся в тех же полях LayerPose, но это скорости, а не поза
+        public LayerPose InTangent;   // с какой скоростью приходим в ключ
+        public LayerPose OutTangent;  // с какой уходим из него
     }
 
     public class AnimClip
@@ -76,6 +109,7 @@ namespace SoA.Common.Graphics.Animation
         public float FadeOut { get; private set; } = DefaultOneShotFade;
 
         private readonly Dictionary<string, List<Keyframe>> _tracks = new();
+        private readonly HashSet<string> _tracksWithoutTangents = new(); // касательные пересчитываются лениво
         private readonly List<(float Time, string Name)> _events = new();
         public IReadOnlyList<(float Time, string Name)> Events => _events;
 
@@ -121,6 +155,7 @@ namespace SoA.Common.Graphics.Animation
                 track.Add(kf);
             else
                 track.Insert(at, kf);
+            _tracksWithoutTangents.Add(layer);
             return this;
         }
 
@@ -141,6 +176,8 @@ namespace SoA.Common.Graphics.Animation
                 return LayerPose.Identity;
             if (track.Count == 1)
                 return track[0].Pose;
+            if (_tracksWithoutTangents.Remove(layer))
+                BuildTangents(track);
 
             if (Loop)
                 time = ((time % Duration) + Duration) % Duration;
@@ -182,22 +219,206 @@ namespace SoA.Common.Graphics.Animation
             }
 
             float t = span <= 0f ? 1f : MathHelper.Clamp(local / span, 0f, 1f);
-            return LayerPose.Lerp(prev.Pose, next.Pose, Apply(prev.Ease, t));
+            return prev.Ease switch
+            {
+                EaseMode.Linear => LayerPose.Lerp(prev.Pose, next.Pose, t),
+                EaseMode.Snap => t < 1f ? prev.Pose : next.Pose,
+                _ => Hermite(prev.Pose, prev.OutTangent, next.Pose, next.InTangent, span, t),
+            };
         }
 
-        private static float Apply(EaseMode ease, float t) => ease switch
+        // Кубический сплайн Эрмита по всем каналам позы
+        private static LayerPose Hermite(in LayerPose p0, in LayerPose m0, in LayerPose p1, in LayerPose m1,
+            float span, float t)
         {
-            EaseMode.Smooth => t * t * (3f - 2f * t),
-            EaseMode.EaseIn => t * t,
-            EaseMode.EaseOut => 1f - (1f - t) * (1f - t),
-            EaseMode.Snap => t < 1f ? 0f : 1f,
-            _ => t,
-        };
+            float t2 = t * t;
+            float t3 = t2 * t;
+            float h00 = 2f * t3 - 3f * t2 + 1f;
+            float h10 = (t3 - 2f * t2 + t) * span;
+            float h01 = -2f * t3 + 3f * t2;
+            float h11 = (t3 - t2) * span;
+
+            LayerPose result = default;
+            for (int c = 0; c < LayerPose.ChannelCount; c++)
+                result.Set(c, h00 * p0.Get(c) + h10 * m0.Get(c) + h01 * p1.Get(c) + h11 * m1.Get(c));
+            return result;
+        }
+
+        // Касательные сплайна.
+        // Раньше каждый отрезок сглаживался сам по себе (SmoothStep), и скорость падала до нуля
+        // на КАЖДОМ ключе: движение шло рывками «разгон — стоп — разгон», а EaseIn перед обычным
+        // ключом давал мгновенный стоп с полной скорости. Отсюда и «топорность».
+        //
+        // Теперь (Smooth) движение проходит сквозь ключ со скоростью, а замирает только там, где
+        // ключ — экстремум канала: пик замаха, крайняя точка качания, дрожь. Касательные ограничены
+        // по Фричу–Карлсону, поэтому сплайн никогда не перелетает авторские значения.
+        // EaseIn/EaseOut воспроизводят старые кривые t² и 1-(1-t)² ТОЧНО — удары приходят в
+        // землю на полной скорости, как и были задуманы, — а соседние Smooth-отрезки
+        // подстраиваются под них без скачка скорости.
+        private void BuildTangents(List<Keyframe> track)
+        {
+            int n = track.Count;
+            if (n < 2)
+                return;
+
+            // 1. Авто-касательные: одна скорость на ключ, по соседям слева и справа
+            for (int i = 0; i < n; i++)
+            {
+                Keyframe key = track[i];
+                LayerPose tangent = default;
+                if (TryNeighbor(track, i, -1, out Keyframe prev, out float prevTime)
+                    && TryNeighbor(track, i, 1, out Keyframe next, out float nextTime))
+                {
+                    for (int c = 0; c < LayerPose.ChannelCount; c++)
+                    {
+                        tangent.Set(c, AutoTangent(prev.Pose.Get(c), prevTime,
+                            key.Pose.Get(c), key.Time, next.Pose.Get(c), nextTime));
+                    }
+                }
+                // Без соседа с одной стороны (края не-лупа) касательная нулевая: клип
+                // начинается и заканчивается в покое
+                key.InTangent = tangent;
+                key.OutTangent = tangent;
+                track[i] = key;
+            }
+
+            // 2. Явные EaseIn/EaseOut — те же кривые, что были: t² и 1-(1-t)²
+            for (int i = 0; i < n; i++)
+            {
+                if (!Loop && i == n - 1)
+                    break;
+                int j = (i + 1) % n;
+                Keyframe from = track[i];
+                Keyframe to = track[j];
+                if (from.Ease is not (EaseMode.EaseIn or EaseMode.EaseOut))
+                    continue;
+
+                float span = j > i ? to.Time - from.Time : Duration - from.Time + to.Time;
+                if (span <= 0.001f)
+                    continue;
+
+                LayerPose doubledSlope = default;
+                for (int c = 0; c < LayerPose.ChannelCount; c++)
+                    doubledSlope.Set(c, 2f * (to.Pose.Get(c) - from.Pose.Get(c)) / span);
+
+                if (from.Ease == EaseMode.EaseIn)
+                {
+                    from.OutTangent = default;   // старт с места
+                    to.InTangent = doubledSlope; // приход на полной скорости
+                }
+                else
+                {
+                    from.OutTangent = doubledSlope;
+                    to.InTangent = default;
+                }
+                track[i] = from;
+                track[j] = to;
+            }
+
+            // 3. Стыки с плавными отрезками — без скачка скорости:
+            //    • в старт EaseIn плавный отрезок приходит в покой, из финиша EaseOut — стартует из покоя;
+            //    • из финиша EaseIn (разгон) плавный отрезок продолжает с той же скоростью, в старт
+            //      EaseOut (срыв) — приходит с ней. Если движение на стыке разворачивается (удар и
+            //      отскок), скорость не переносится: там разрыв и задуман
+            for (int i = 0; i < n; i++)
+            {
+                bool hasIncoming = i > 0 || Loop;
+                bool hasOutgoing = i < n - 1 || Loop;
+                if (!hasIncoming || !hasOutgoing)
+                    continue;
+
+                int prevIndex = (i - 1 + n) % n;
+                int nextIndex = (i + 1) % n;
+                EaseMode incoming = track[prevIndex].Ease;
+                EaseMode outgoing = track[i].Ease;
+                Keyframe key = track[i];
+
+                if (outgoing == EaseMode.EaseIn && incoming == EaseMode.Smooth)
+                    key.InTangent = default;
+                if (incoming == EaseMode.EaseOut && outgoing == EaseMode.Smooth)
+                    key.OutTangent = default;
+                if (incoming == EaseMode.EaseIn && outgoing == EaseMode.Smooth)
+                    key.OutTangent = CarryTangent(key.InTangent, key.OutTangent, key, track[nextIndex], i, nextIndex);
+                if (outgoing == EaseMode.EaseOut && incoming == EaseMode.Smooth)
+                    key.InTangent = CarryTangent(key.OutTangent, key.InTangent, track[prevIndex], key, prevIndex, i);
+                track[i] = key;
+            }
+        }
+
+        // Переносит скорость через стык по каналам, где отрезок идёт в ту же сторону. Ограничение то же,
+        // что у авто-касательных (не круче трёх наклонов отрезка), — чтобы не перелететь ключ
+        private LayerPose CarryTangent(in LayerPose carried, in LayerPose fallback, in Keyframe from, in Keyframe to,
+            int fromIndex, int toIndex)
+        {
+            float span = toIndex > fromIndex ? to.Time - from.Time : Duration - from.Time + to.Time;
+            if (span <= 0.001f)
+                return fallback;
+
+            LayerPose result = fallback;
+            for (int c = 0; c < LayerPose.ChannelCount; c++)
+            {
+                float slope = (to.Pose.Get(c) - from.Pose.Get(c)) / span;
+                float speed = carried.Get(c);
+                if (speed * slope <= 0f)
+                    continue;
+                result.Set(c, Math.Sign(speed) * Math.Min(Math.Abs(speed), 3f * Math.Abs(slope)));
+            }
+            return result;
+        }
+
+        // Ближайший сосед ключа в сторону dir (±1) со временем, развёрнутым через край лупа.
+        // Ключ на том же тике (луп с дублем на 0 и на Duration) пропускаем: направления он не даёт
+        private bool TryNeighbor(List<Keyframe> track, int i, int dir, out Keyframe neighbor, out float time)
+        {
+            int n = track.Count;
+            float ownTime = track[i].Time;
+            for (int step = 1; step <= n; step++)
+            {
+                int raw = i + dir * step;
+                if (!Loop && (raw < 0 || raw >= n))
+                    break;
+
+                int index = ((raw % n) + n) % n;
+                float wraps = (float)Math.Floor(raw / (float)n);
+                time = track[index].Time + wraps * Duration;
+                if (Math.Abs(time - ownTime) > 0.001f)
+                {
+                    neighbor = track[index];
+                    return true;
+                }
+            }
+            neighbor = default;
+            time = 0f;
+            return false;
+        }
+
+        // Монотонная касательная (Фрич–Карлсон): ноль в экстремуме, иначе наклон по соседям,
+        // но не круче трёх наклонов ближайшего отрезка — тогда кривая не перелетает ключи
+        private static float AutoTangent(float prevValue, float prevTime, float value, float time,
+            float nextValue, float nextTime)
+        {
+            float slopeLeft = (value - prevValue) / (time - prevTime);
+            float slopeRight = (nextValue - value) / (nextTime - time);
+            if (slopeLeft * slopeRight <= 0f)
+                return 0f;
+
+            float slope = (nextValue - prevValue) / (nextTime - prevTime);
+            float limit = 3f * Math.Min(Math.Abs(slopeLeft), Math.Abs(slopeRight));
+            return Math.Sign(slope) * Math.Min(Math.Abs(slope), limit);
+        }
     }
 
     public class AnimPlayer
     {
         private const float CrossfadeTicks = 10f;  // блендинг при смене базового клипа
+
+        // Инерция кроссфейда: старая поза не замирает снимком, а докатывается по своей
+        // последней скорости и гаснет. Иначе на каждой смене клипа движение обрывалось в ноль —
+        // тот же «стоп» на стыке, что был внутри клипов
+        private const float FadeMomentumDamping = 0.72f;
+        // Предел скорости, которую поза уносит в кроссфейд (за тик, по каналам LayerPose):
+        // Snap-ключ дал бы скачок, а экстраполировать скачок нельзя
+        private static readonly float[] FadeMomentumMax = { 0.08f, 6f, 6f, 0.04f, 0.04f, 0.12f, 0.12f };
 
         private readonly Dictionary<string, AnimClip> _clips = new();
         private readonly string[] _layers;
@@ -212,11 +433,14 @@ namespace SoA.Common.Graphics.Animation
 
         // Кроссфейд: снимок баз-поз всех слоёв в момент переключения клипа
         private readonly Dictionary<string, LayerPose> _fadeFrom = new();
+        private readonly Dictionary<string, LayerPose> _fadeMomentum = new();
         private float _fadeLeft;
         private float _fadeDuration = CrossfadeTicks;
 
-        // Итоговые позы тика: базовая (для снимка кроссфейда) и финальная (база + один-шот)
+        // Итоговые позы тика: базовая (для снимка кроссфейда), она же тиком раньше (скорость
+        // для инерции) и финальная (база + один-шот)
         private readonly Dictionary<string, LayerPose> _baseCache = new();
+        private readonly Dictionary<string, LayerPose> _prevBaseCache = new();
         private readonly Dictionary<string, LayerPose> _cache = new();
 
         // События: колбэк в момент пересечения метки + полл-флаги для чтения снаружи
@@ -243,8 +467,21 @@ namespace SoA.Common.Graphics.Animation
                 return;
 
             _fadeFrom.Clear();
+            _fadeMomentum.Clear();
             foreach (string layer in _layers)
-                _fadeFrom[layer] = _baseCache.TryGetValue(layer, out LayerPose p) ? p : LayerPose.Identity;
+            {
+                LayerPose now = _baseCache.TryGetValue(layer, out LayerPose p) ? p : LayerPose.Identity;
+                LayerPose before = _prevBaseCache.TryGetValue(layer, out LayerPose q) ? q : now;
+                _fadeFrom[layer] = now;
+
+                LayerPose momentum = default;
+                for (int c = 0; c < LayerPose.ChannelCount; c++)
+                {
+                    float max = FadeMomentumMax[c];
+                    momentum.Set(c, MathHelper.Clamp(now.Get(c) - before.Get(c), -max, max));
+                }
+                _fadeMomentum[layer] = momentum;
+            }
             _fadeDuration = Math.Max(1f, fade);
             _fadeLeft = _base != null ? _fadeDuration : 0f;
 
@@ -296,21 +533,51 @@ namespace SoA.Common.Graphics.Animation
             if (_fadeLeft > 0f)
                 _fadeLeft -= 1f;
 
+            // Кривые блендинга плавные (smoothstep): на линейных вес менялся с постоянной
+            // скоростью от первого тика до последнего, и начало/конец перехода читались изломом
+            float fadeWeight = SmoothWeight(_fadeLeft / _fadeDuration);
+            float oneShotEnvelope = _oneShot == null ? 0f : SmoothWeight(Math.Min(
+                _oneShotTime / _oneShot.FadeIn, (_oneShot.Duration - _oneShotTime) / _oneShot.FadeOut));
+
             foreach (string layer in _layers)
             {
                 LayerPose basePose = _base?.Sample(layer, _time) ?? LayerPose.Identity;
                 if (_fadeLeft > 0f && _fadeFrom.TryGetValue(layer, out LayerPose from))
-                    basePose = LayerPose.Lerp(basePose, from, _fadeLeft / _fadeDuration);
+                {
+                    from = CoastFadePose(layer, from);
+                    basePose = LayerPose.Lerp(basePose, from, fadeWeight);
+                }
+
+                if (_baseCache.TryGetValue(layer, out LayerPose previous))
+                    _prevBaseCache[layer] = previous;
                 _baseCache[layer] = basePose;
 
                 if (_oneShot != null)
-                {
-                    float env = MathHelper.Clamp(Math.Min(_oneShotTime / _oneShot.FadeIn,
-                        (_oneShot.Duration - _oneShotTime) / _oneShot.FadeOut), 0f, 1f);
-                    basePose = LayerPose.Combine(basePose, LayerPose.Faded(_oneShot.Sample(layer, _oneShotTime), env));
-                }
+                    basePose = LayerPose.Combine(basePose, LayerPose.Faded(_oneShot.Sample(layer, _oneShotTime), oneShotEnvelope));
                 _cache[layer] = basePose;
             }
+        }
+
+        // Старая поза докатывается по инерции: шаг скорости, затем её затухание
+        private LayerPose CoastFadePose(string layer, LayerPose from)
+        {
+            if (!_fadeMomentum.TryGetValue(layer, out LayerPose momentum))
+                return from;
+
+            for (int c = 0; c < LayerPose.ChannelCount; c++)
+            {
+                from.Set(c, from.Get(c) + momentum.Get(c));
+                momentum.Set(c, momentum.Get(c) * FadeMomentumDamping);
+            }
+            _fadeFrom[layer] = from;
+            _fadeMomentum[layer] = momentum;
+            return from;
+        }
+
+        private static float SmoothWeight(float t)
+        {
+            t = MathHelper.Clamp(t, 0f, 1f);
+            return t * t * (3f - 2f * t);
         }
 
         // Итоговая аддитивная поза слоя. До первого Update (бестиарий, первый кадр) — Identity.

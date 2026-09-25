@@ -74,7 +74,7 @@ namespace SoA.Content.Tiles.Other
                 return true;
             }
 
-            player.ConsumeItem(baitType);
+            // Приманка не расходуется: все призывалки мода многоразовые
             SummonEffects(i, j);
             SoundEngine.PlaySound(SoundID.Roar, player.Center);
 
