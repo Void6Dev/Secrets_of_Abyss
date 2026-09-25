@@ -77,12 +77,27 @@ namespace SoA.Common.Graphics
         public static Texture2D Noise =>
             (_noise ??= ModContent.Request<Texture2D>("SoA/Assets/Textures/WaveNoise", AssetRequestMode.ImmediateLoad)).Value;
 
+        // Настоящий аддитив для премультиплицированного цвета: источник * 1 + приёмник * 1.
+        // Ванильный BlendState.Additive умножает источник на ЕГО ЖЕ альфу (SourceAlpha), поэтому
+        // принятое в моде свечение «цвет с A = 0» в нём не рисовалось вообще: вспышки, телеграфы
+        // (тень слэма, линия рывка, маркер приземления, столб бреши), глаза, аура ярости, тело
+        // ударной волны, дуги броска копья — всё умножалось на ноль. Цвет с альфой здесь тоже
+        // корректен: премультиплицированный rgb просто складывается с кадром.
+        private static BlendState _glowBlend;
+        public static BlendState GlowBlend => _glowBlend ??= new BlendState
+        {
+            ColorSourceBlend = Blend.One,
+            AlphaSourceBlend = Blend.One,
+            ColorDestinationBlend = Blend.One,
+            AlphaDestinationBlend = Blend.One,
+        };
+
         // Свап в аддитивный Immediate-режим (для шейдеров/свечения) и обратно в обычную отрисовку.
         // Пара строго симметрична: на каждый BeginAdditive — свой EndAdditive.
         public static void BeginAdditive(SpriteBatch sb)
         {
             sb.End();
-            sb.Begin(SpriteSortMode.Immediate, BlendState.Additive, null, null, null, null,
+            sb.Begin(SpriteSortMode.Immediate, GlowBlend, null, null, null, null,
                 Main.GameViewMatrix.TransformationMatrix);
         }
 

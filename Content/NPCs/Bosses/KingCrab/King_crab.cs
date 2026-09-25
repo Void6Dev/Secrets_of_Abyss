@@ -707,6 +707,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             ScreenPunch(7f, 20, new Vector2(-NPC.spriteDirection, 0f));
             SpawnFlash(at, 320f, Color.White, 3);
             SpawnCracks(NPC.Bottom, 3, 80f);
+            SpawnImpactDebris(at, 14, 1f, -NPC.spriteDirection); // отлетает назад, от стены
+            SpawnDustCloud(at, 90f, 5);
+            SpawnSparks(at, 10, 8f);
+            ImpactLight(at, ImpactLightColor, 1.8f);
             SoundEngine.PlaySound(SoundID.Item14 with { Pitch = -0.5f }, at);
 
             for (int i = 0; i < 18; i++)
@@ -825,6 +829,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 PlayClip("tide_release", once: true);
                 HitStop(5);
                 ScreenPunch(6f, 20, Vector2.UnitY);
+                SpawnWaterSpray(NPC.Bottom, 30, 13f, -Vector2.UnitY, 0.5f);
+                ImpactLight(NPC.Center, TideLightColor, 2.2f, 18);
             }
 
             if (Main.netMode != NetmodeID.MultiplayerClient)
@@ -970,6 +976,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     NPC.velocity.Y = -JumpLaunchSpeed;
                     SoundEngine.PlaySound(SoundID.Item45 with { Pitch = -0.8f }, NPC.Center);
                     SpawnSandBurst(NPC.Bottom - new Vector2(70f, 8f), 140, 12, 18, 4f, 2f, 7f);
+                    SpawnDustCloud(NPC.Bottom, 180f, 6, 0.9f);
                     EnterSubState(1f, 200f); // сверху висит предохранитель по времени
                 }
                 return;
@@ -1188,6 +1195,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 PlayClip("burrow_land", once: true); // иначе садился с поджатыми клешнями
                 HitStop(5);
                 SpawnCracks(NPC.Bottom, 3, 90f);
+                SpawnImpactDebris(NPC.Bottom, 12, 1f);
+                SpawnDustCloud(NPC.Bottom, 200f, 8);
             }
             ReturnToScuttle();
         }

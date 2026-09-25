@@ -9,6 +9,7 @@ using Terraria.Graphics.Shaders;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
+using SoA.Common.Graphics.Particles;
 
 namespace SoA.Content.NPCs.Bosses.KingCrab
 {
@@ -697,6 +698,14 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     new Vector2(Main.rand.NextFloatDirection() * 1.2f, -Main.rand.NextFloat(0.4f, 1.6f)));
                 d.scale = Main.rand.NextFloat(0.9f, 1.5f);
                 d.color = dustColor;
+            }
+
+            // Клубок пыли на быстром шаге: вес туши читается и по грунту, не только по звуку
+            if (speedT > 0.5f && Main.rand.NextBool(2))
+            {
+                SoAParticles.SpawnSmoke(foot + new Vector2(0f, -8f),
+                    new Vector2(Main.rand.NextFloatDirection() * 0.8f, -0.4f),
+                    Color.Lerp(dustColor, Color.White, 0.15f), 26f, 70f, 0.35f, 40);
             }
 
             // В агонии из-под лап выбивает уже камешки, а не песок

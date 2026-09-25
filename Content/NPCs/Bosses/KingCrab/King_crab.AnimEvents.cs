@@ -138,6 +138,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SpawnFlash(impact, 400f, Color.White, 2);
             SpawnCracks(impact, 4, 90f);
             SpawnGroundColumn(impact, 26, 9f);
+            SpawnImpactDebris(impact, 16, 1f);
+            SpawnDustCloud(impact, 160f, 7);
+            ImpactLight(impact, ImpactLightColor, 2.2f);
+            ScreenWave(impact, 0.35f, 26f);
 
             // Двойной фронт: второе кольцо меньшего радиуса с задержкой читается мощнее
             ScheduleFx(3, () => TriggerImpactRing(impact, 170f, 20f, 0.45f));
@@ -172,6 +176,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             HitStop(2);
             ScreenPunch(5f, 14, new Vector2(NPC.spriteDirection, 0f));
             SpawnFlash(_clawWristWorld[0], 220f, new Color(200, 230, 255), 3);
+            SpawnDustCloud(NPC.Bottom - new Vector2(NPC.spriteDirection * 60f, 0f), 120f, 4, 0.8f);
         }
 
         // ------------------------------------------------------------------------------------
@@ -189,6 +194,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             TriggerImpactRing(muzzle, last ? 140f : 60f, last ? 16f : 10f, 0.1f);
             SpawnFlash(muzzle, last ? 150f : 90f, new Color(150, 220, 255), 2);
             ScreenPunch(last ? 2.5f : 1.2f, last ? 8 : 5, new Vector2(-NPC.spriteDirection, 0f));
+            SpawnWaterSpray(muzzle, last ? 12 : 5, last ? 9f : 6f, new Vector2(NPC.spriteDirection, -0.2f), 0.45f);
+            ImpactLight(muzzle, TideLightColor, last ? 1.6f : 1f, last ? 10 : 7);
 
             for (int i = 0; i < (last ? 10 : 5); i++)
             {
@@ -261,6 +268,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SpawnFlash(at, 460f, Color.White, 3);
             SpawnCracks(at, 5, 130f);
             SpawnGroundColumn(at, 34, 12f);
+            SpawnImpactDebris(at, 26, 1.25f);
+            SpawnDustCloud(at, 260f, 12, 1.3f);
+            ImpactLight(at, ImpactLightColor, 2.8f, 18);
+            ScreenWave(at, 0.7f, 34f);
 
             // Третье кольцо с задержкой + оседающая пыль + затухающий гул
             ScheduleFx(4, () => TriggerImpactRing(at, 260f, 24f, 0.7f));
@@ -288,6 +299,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             ScreenPunch(3.5f, 12, new Vector2(NPC.spriteDirection, 0f));
             SpawnFlash(grip, 180f, new Color(255, 220, 200), 2);
             SoundEngine.PlaySound(SoundID.Tink with { Pitch = -0.4f, Volume = 0.8f }, grip);
+            SpawnSparks(grip, 14, 9f);
+            ImpactLight(grip, SparkColor, 1.6f, 10);
 
             // Искры между половинками пинцера
             for (int i = 0; i < 12; i++)
@@ -327,6 +340,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             HitStop(5);
             Vector2 mouth = FacingToWorld(new Vector2(90f, -20f));
             SpawnFlash(mouth, 320f, new Color(255, 210, 140), 3);
+            ImpactLight(mouth, RoyalLightColor, 2.6f, 20);
+            ScreenWaveFollow(0.9f, 45f);
+            SpawnDustCloud(NPC.Bottom, 300f, 10, 1.4f); // рёв сдувает пыль из-под лап
 
             // Видимый конус звука: три расходящиеся дуги от морды
             for (int i = 0; i < 3; i++)
@@ -356,6 +372,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Vector2 crown = CrownSeatWorld(out _);
             TriggerImpactRing(crown, 320f, 26f, 0.8f);
             SpawnFlash(crown, 520f, new Color(255, 205, 110), 10);
+            ImpactLight(crown, RoyalLightColor, 2.4f, 24);
             SoundEngine.PlaySound(SoundID.Item29 with { Pitch = -0.5f, Volume = 0.6f }, NPC.Center);
             ScreenRumble(1.2f);
         }
@@ -372,6 +389,11 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             HitStop(5);
             Vector2 mid = FacingToWorld(new Vector2(60f, -10f));
             SpawnFlash(mid, 300f, Color.White, 2);
+            for (int side = -1; side <= 1; side += 2)
+                SpawnWaterSpray(mid, 18, 11f, new Vector2(side, -0.25f), 0.35f); // хлопок бьёт вбок
+            SpawnDustCloud(NPC.Bottom, 200f, 8);
+            ImpactLight(mid, TideLightColor, 2.2f, 16);
+            ScreenWave(mid, 0.5f, 28f);
 
             // Хлопок бьёт ВБОК, а не сферой: сплющенное кольцо + горизонтальный разлёт песка
             SoAFlatRing(mid, 420f);
@@ -452,6 +474,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             AddShellGrains(5);
             SpawnGroundColumn(NPC.Bottom, 40, 16f);
             SpawnFlash(NPC.Bottom, 380f, new Color(240, 215, 160), 3);
+            SpawnImpactDebris(NPC.Bottom, 30, 1.5f);
+            SpawnDustCloud(NPC.Bottom, 220f, 10, 1.2f);
+            ImpactLight(NPC.Bottom, ImpactLightColor, 2.4f, 18);
+            ScreenWave(NPC.Bottom, 0.8f, 36f);
 
             for (int i = 0; i < 16; i++)
             {
@@ -488,6 +514,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SpawnSandBurst(at - new Vector2(60f, 8f), 120, 10, 16, 3.5f, 2f, 7f);
             SpawnCracks(at, 2, 60f);
             SpawnFlash(at, 240f, Color.White, 2);
+            SpawnImpactDebris(at, 8, 0.9f);
+            SpawnDustCloud(at, 120f, 4);
+            ImpactLight(at, RageLightColor, 2f);
             ScreenPunch(4f, 14, Vector2.UnitY);
             SoundEngine.PlaySound(SoundID.Item14 with { Pitch = -0.3f }, NPC.Center);
         }
@@ -518,6 +547,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             HitStop(5);
             SpawnSandBurst(NPC.Bottom - new Vector2(90f, 8f), 180, 12, 24, 4f, 2f, 7f);
             SpawnCracks(NPC.Bottom, 3, 100f);
+            SpawnImpactDebris(NPC.Bottom, 12, 0.8f);
+            SpawnDustCloud(NPC.Bottom, 300f, 14, 0.8f);
             ScreenPunch(4f, 14, Vector2.UnitY);
             ScheduleFx(20, () => SpawnSandBurst(NPC.Bottom - new Vector2(120f, 4f), 240, 8, 22,
                 2f, 0.3f, 2f, 0.7f, 1.1f));
@@ -548,6 +579,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             _wetTimer = WetTicks; // дальше вода стекает с панциря
             SpawnFlash(FacingToWorld(new Vector2(0f, -15f)), 300f, new Color(255, 120, 60), 4);
             SpawnWaterColumn(25);
+            ImpactLight(FacingToWorld(new Vector2(0f, -15f)), new Color(255, 120, 60), 2.5f, 20);
             TriggerImpactRing(NPC.Center, 300f, 24f, 0.5f);
             SoundEngine.PlaySound(SoundID.Item74 with { Pitch = -0.5f }, NPC.Center);
         }
@@ -564,6 +596,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SpawnWaterColumn(45);
             SpawnRageSparks(40);
             SoundEngine.PlaySound(SoundID.Roar with { Pitch = -0.6f }, NPC.Center);
+            ScreenWaveFollow(1.1f, 60f, waves: 3);
+            ImpactLight(NPC.Center, new Color(200, 230, 255), 3f, 30);
+            SpawnWaterSpray(NPC.Bottom, 40, 16f, -Vector2.UnitY, 0.35f);
+            SpawnImpactDebris(NPC.Bottom, 20, 1.3f);
 
             // Вертикальный столб воды на весь экран
             for (int i = 0; i < 60; i++)

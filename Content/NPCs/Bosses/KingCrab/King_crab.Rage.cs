@@ -267,6 +267,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             TriggerImpactRing(NPC.Center, 460f, 30f, 1f);
             ScreenPunch(RageIgniteShake, 22);
             SpawnRageSparks(45);
+            ImpactLight(NPC.Center, RageLightColor, 2.6f, 26);
+            ScreenWaveFollow(0.6f, 36f);
             EnterSubState(RageSubHunt, RageHuntMaxTicks);
         }
 
