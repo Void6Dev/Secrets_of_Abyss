@@ -39,6 +39,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Dying,         // последний взгляд перед смертью
             Phase2Transition, // кат-сцена смены фазы: бой на паузе, король неуязвим
             CourtDuel,        // свита фазы 2: король уходит под песок и в бою не участвует
+            Intro,            // появление: идёт под песком, из грунта встаёт корона, выход и рёв (King_crab.Cinematics.cs)
         }
 
         // ---------- СТАТЫ ----------
@@ -68,7 +69,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const int RoarWindupTicks = 45;
         private const int TsunamiWindupTicks = 55;     // хлопок на 47-м тике
         private const int CrownCommandTicks = 70;
-        private const int DyingTicks = 100;            // «последний взгляд» перед смертью
+        private const int DyingTicks = 240;            // сцена смерти целиком: взгляд, корона, рассыпание в песок
         private const int Phase2TransitionTicks = 130; // = длина клипа phase2_transition
 
         private const int RecoverTicks = 26;           // общий отход после тяжёлых атак
@@ -227,7 +228,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private bool BurrowHidden =>
             (State == CrabState.Burrow && SubState >= BurrowSubTravel && SubState < BurrowSubErupt)
             || (State == CrabState.KnightCourt && SubState >= 1f && SubState < 2f)
-            || (State == CrabState.CourtDuel && SubState >= 1f && SubState < 2f);
+            || (State == CrabState.CourtDuel && SubState >= 1f && SubState < 2f)
+            || (State == CrabState.Intro && SubState < IntroSubErupt);
 
         // Король идёт сквозь тайлы: подкоп, гвардия, свита, спуск сквозь настил.
         // В этот момент нельзя входить ни в ярость, ни в кат-сцену смены фазы: обе возвращают
@@ -358,7 +360,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 && State != CrabState.Dying && State != CrabState.Phase2Transition && !PassingThroughTiles)
                 BeginPhase2Transition();
 
-            if (State != CrabState.Phase2Transition)
+            // В кат-сценах владения не сторожатся: появление ещё и задаёт, где «дом» короля
+            if (State != CrabState.Phase2Transition && State != CrabState.Intro)
                 UpdateTerritoryWatch(target); // сторож владений: может перебить обычный AI яростью
 
             switch (State)
@@ -379,6 +382,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case CrabState.Dying: AIDying(target); break;
                 case CrabState.Phase2Transition: AIPhase2Transition(target); break;
                 case CrabState.CourtDuel: AICourtDuel(target); break;
+                case CrabState.Intro: AIIntro(target); break;
             }
 
             // Ступенька по ходу — шагом вверх. Раньше и один блок останавливал рывок
@@ -432,7 +436,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             // В ярости король неуязвим: пока нарушитель не в воде, бить его бесполезно —
             // об этом игроку говорит сама аура
             bool guarded = State == CrabState.KnightCourt && SubState >= 1f && KnightsAlive() > 0;
-            bool cutscene = State == CrabState.Phase2Transition;
+            bool cutscene = State == CrabState.Phase2Transition || State == CrabState.Intro;
             NPC.dontTakeDamage = State == CrabState.Dying || BurrowHidden || guarded || InOceanRage || cutscene;
             if (BurrowHidden || cutscene)
                 NPC.damage = 0; // в кат-сцене туша не бьёт: игрок не должен умирать от статиста
@@ -953,6 +957,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SoundEngine.PlaySound(SoundID.Roar, NPC.Center);
             TriggerImpactRing(NPC.Center, 420f, 34f, 0.8f);
             ScreenPunch(6f, 24);
+            // Выпуск рёва: клип и его метка roar_release (свет, волна, дуги звука, пыль).
+            // Раньше клип нигде не запускался, и все эффекты выпуска молчали
+            if (!Main.dedServ)
+                PlayClip("roar_release", once: true);
 
             foreach (Player p in Main.ActivePlayers)
             {
@@ -1207,7 +1215,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (!Landed() && Timer > 0f)
                 return;
 
-            // Падает с большей высоты, чем в прыжке, — и приземление обязано быть тяжелее
+            LandFromEruption();
+            ReturnToScuttle();
+        }
+
+        // Падает с большей высоты, чем в прыжке, — и приземление обязано быть тяжелее
+        private void LandFromEruption()
+        {
             NPC.noTileCollide = false;
             TriggerImpactRing(NPC.Bottom, 340f, 28f);
             SpawnSandBurst(NPC.Bottom - new Vector2(80f, 8f), 160, 12, 18, 4f, 2f, 7f);
@@ -1220,7 +1234,6 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 SpawnImpactDebris(NPC.Bottom, 12, 1f);
                 SpawnDustCloud(NPC.Bottom, 200f, 8);
             }
-            ReturnToScuttle();
         }
 
         // Пыль над крабом: показывает, что под грунтом кто-то идёт
@@ -1511,7 +1524,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 NPC.spriteDirection = look;
             }
 
-            // Пыль обрушения, hit-stop и удар камеры вешает диспетчер меток на «collapse»
+            // Пыль обрушения, hit-stop и удар камеры вешает диспетчер меток на «collapse»,
+            // рассыпание в песок и сборку копья — King_crab.Cinematics.cs
+
+            // Добыча ванильно падает в случайную точку хитбокса. У туши 260×200 копьё
+            // вываливалось бы в стороне от места, где оно только что собралось из песка
+            if (Timer <= DeathLootShrinkTick && NPC.width > DeathLootBox)
+                ShrinkHitbox(DeathLootBox);
 
             if (Timer > 0f)
                 return;
@@ -1532,7 +1551,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             NPC.velocity.X = 0f;
             NPC.noTileCollide = false;
             EnterState(CrabState.Dying, DyingTicks);
-            SoundEngine.PlaySound(SoundID.NPCDeath1 with { Pitch = -0.6f }, NPC.Center);
+            // Звук, пауза и вспышка последнего удара — OnFinalBlow на клиентах (Cinematics):
+            // в сетевой игре CheckDead зовётся на сервере, где звуков нет
             return false;
         }
 
@@ -1611,8 +1631,14 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (Main.netMode == NetmodeID.Server)
                 return;
 
-            int count = NPC.life > 0 ? 4 : 45;
-            for (int i = 0; i < count; i++)
+            // Смерть: туша к этому моменту уже рассыпалась в песок (Cinematics) — кровь неуместна
+            if (NPC.life <= 0)
+            {
+                SpawnDustCloud(NPC.Bottom, 160f, 6, 0.6f);
+                return;
+            }
+
+            for (int i = 0; i < 4; i++)
             {
                 Dust d = Dust.NewDustDirect(NPC.position, NPC.width, NPC.height,
                     Main.rand.NextBool(3) ? DustID.Water : DustID.RedTorch);

@@ -7,6 +7,7 @@ using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.ID;
 using Terraria.ModLoader;
+using SoA.Common.Graphics.Particles;
 using SoA.Common.Graphics.Animation;
 
 namespace SoA.Content.NPCs.Bosses.KingCrab
@@ -19,7 +20,14 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
     {
         // Наклон и прижатие при «заботе» (CrownCareTilt/Press) — в King_crab.Rig.cs
         private const float CrownFallGravity = 0.35f; // гравитация слетевшей короны
-        private const float CrownDropAtDying = 0.6f;  // доля Timer стадии Dying, когда корона слетает
+        // Момент, когда корона слетает в сцене смерти, — DeathCrownFallTick (King_crab.Cinematics.cs)
+
+        // ---------- КОРОНА В СЦЕНАХ ----------
+        private const float CrownRollFriction = 0.965f;   // смерть: корона катится к ногам игрока
+        private const float CrownRollStopNearPlayer = 36f;
+        private const float CrownRollMinSpeed = 1.2f;
+        private const float CrownRollMaxSpeed = 9f;
+        private const float CrownRollWobble = 0.4f;       // покачивание на ребре, пока катится
 
         private Asset<Texture2D> _crownTex;
         private Asset<Texture2D> _crownGlowTex;
@@ -28,7 +36,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // Корона живёт отдельным маленьким автоматом: пока король под землёй (или умирает)
         // она не исчезает, а сваливается с головы и остаётся лежать на грунте; когда король
         // возвращается наверх, она сама плавно взлетает обратно и садится на панцирь.
-        private enum CrownMode { Seated, Falling, Landed, Returning }
+        // Hidden — корона ещё под песком (появление), Emerging — встаёт из грунта,
+        // Rolling — после смерти катится к ногам игрока
+        private enum CrownMode { Seated, Falling, Landed, Returning, Hidden, Emerging, Rolling }
 
         private const int CrownReturnTicks = 40;   // длительность возврата на голову
         private const float CrownReturnArc = 46f;  // высота дуги, по которой корона летит назад
@@ -42,6 +52,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private float _crownReturnT;
         private Vector2 _crownReturnFrom;
         private float _crownReturnRotFrom;
+        private float _crownEmergeSurfaceY; // поверхность, из которой встаёт корона: ниже неё не рисуем
+        private bool _crownEmergedFully;
+        private float _crownRollTraveled;
+        private float _crownRollStartSpeed;
 
         private void UpdateCrown()
         {
@@ -54,8 +68,21 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (_crownTex?.Value == null)
                 return;
 
+            // Появление: пока король идёт под землёй, короны нет; в тишине она встаёт из песка
+            if (State == CrabState.Intro && SubState < IntroSubErupt)
+            {
+                _crownMode = SubState == IntroSubCrown ? CrownMode.Emerging : CrownMode.Hidden;
+                if (_crownMode == CrownMode.Emerging)
+                    UpdateCrownEmerging();
+                return;
+            }
+            if (_crownMode == CrownMode.Hidden)
+                _crownMode = CrownMode.Seated;
+            else if (_crownMode == CrownMode.Emerging)
+                BeginCrownReturn(); // король вылетел из песка — корона взлетает к нему на голову
+
             // Смерть — корона слетает НАСОВСЕМ. Уход под землю — временно, потом вернётся.
-            bool dying = State == CrabState.Dying && Timer <= DyingTicks * CrownDropAtDying;
+            bool dying = State == CrabState.Dying && DeathElapsed >= DeathCrownFallTick;
             bool underground = (State == CrabState.Burrow && SubState < 2f)
                             || (State == CrabState.KnightCourt && SubState < 2f);
 
@@ -66,6 +93,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             {
                 case CrownMode.Falling:
                     UpdateCrownFall();
+                    break;
+
+                case CrownMode.Rolling:
+                    UpdateCrownRoll();
                     break;
 
                 case CrownMode.Landed:
@@ -82,6 +113,86 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                         UpdateCrownReturn();
                     break;
             }
+
+            // Конец сцены смерти: корона у ног игрока рассыпается золотыми искрами последней
+            if (State == CrabState.Dying && DeathElapsed >= DeathCrownFadeStart && _crownMode != CrownMode.Seated
+                && Main.rand.NextBool(2))
+            {
+                Dust d = Dust.NewDustPerfect(_crownPos + new Vector2(Main.rand.NextFloatDirection() * 16f, -12f),
+                    DustID.GoldCoin, new Vector2(Main.rand.NextFloatDirection() * 0.6f, -Main.rand.NextFloat(0.5f, 2f)));
+                d.noGravity = true;
+                d.scale = Main.rand.NextFloat(0.8f, 1.2f);
+            }
+        }
+
+        // Появление: корона медленно встаёт из песка над точкой выхода и загорается
+        private void UpdateCrownEmerging()
+        {
+            float surfaceY = SurfaceAbove(StateData, NPC.Center.Y);
+            float progress = 1f - Timer / Math.Max(1f, IntroHush);
+            float rise = MathHelper.Clamp(progress / IntroCrownRiseShare, 0f, 1f);
+            rise = 1f - (1f - rise) * (1f - rise); // выходит быстро, у поверхности замедляется
+
+            float height = _crownTex.Value.Height * NPC.scale;
+            _crownEmergeSurfaceY = surfaceY;
+            _crownPos = new Vector2(StateData, surfaceY + CrownRestOffset + (height - CrownRestOffset) * (1f - rise));
+            _crownRot = 0f;
+
+            // Корона светится в темноте сама — видно, что она живая, а не клад на дне
+            SoAParticles.AddLight(_crownPos - new Vector2(0f, height * 0.5f), CrownGoldColor, 0.9f + 0.6f * rise, 2);
+
+            if (Main.rand.NextBool(4))
+            {
+                Dust d = Dust.NewDustPerfect(_crownPos + new Vector2(Main.rand.NextFloatDirection() * 14f, -height * rise),
+                    DustID.Sand, new Vector2(Main.rand.NextFloatDirection() * 0.4f, Main.rand.NextFloat(0.3f, 1.2f)));
+                d.scale = Main.rand.NextFloat(0.7f, 1.1f);
+            }
+
+            // Вышла целиком — одинокий блик и тонкий звон в полной тишине
+            if (rise >= 1f && !_crownEmergedFully)
+            {
+                _crownEmergedFully = true;
+                SpawnFlash(_crownPos - new Vector2(0f, height * 0.6f), 140f, CrownGoldColor, 6);
+                SoundEngine.PlaySound(SoundID.Item29 with { Pitch = 0.6f, Volume = 0.5f }, _crownPos);
+            }
+            else if (rise < 1f)
+            {
+                _crownEmergedFully = false;
+            }
+        }
+
+        // Смерть: корона катится по грунту к ногам игрока и ложится там
+        private void UpdateCrownRoll()
+        {
+            _crownPos.X += _crownVel.X;
+            _crownVel.X *= CrownRollFriction;
+            _crownRollTraveled += Math.Abs(_crownVel.X);
+
+            float ground = FindGroundY(_crownPos.X, _crownPos.Y - 24f, 80f, true);
+            if (float.IsNaN(ground))
+            {
+                // Край уступа — дальше падает, а там ляжет где упала
+                _crownMode = CrownMode.Falling;
+                return;
+            }
+            _crownPos.Y = ground - CrownRestOffset;
+
+            float speedT = _crownRollStartSpeed <= 0f ? 0f : Math.Abs(_crownVel.X) / _crownRollStartSpeed;
+            _crownRot = (float)Math.Sin(_crownRollTraveled * 0.12f) * CrownRollWobble * speedT;
+
+            if (Main.rand.NextBool(3))
+            {
+                Dust d = Dust.NewDustPerfect(_crownPos + new Vector2(0f, 4f), DustID.Sand,
+                    new Vector2(-_crownVel.X * 0.2f, -Main.rand.NextFloat(0.2f, 0.9f)));
+                d.scale = 0.9f;
+            }
+
+            if (Math.Abs(_crownVel.X) > 0.25f)
+                return;
+
+            _crownRot *= 0.4f;
+            _crownMode = CrownMode.Landed;
+            SoundEngine.PlaySound(SoundID.Tink with { Pitch = 0.3f, Volume = 0.45f }, _crownPos);
         }
 
         // Срыв с головы: соскальзывает назад и вверх
@@ -92,6 +203,16 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             int dir = NPC.spriteDirection;
             _crownVel = new Vector2(-dir * 1.5f, -3f);
             _crownRotVel = -dir * 0.05f;
+
+            // В смерти корона не падает назад, а соскальзывает к игроку: дальше она докатится
+            if (State == CrabState.Dying)
+            {
+                int toPlayer = Math.Sign(Main.player[NPC.target].Center.X - _crownPos.X);
+                if (toPlayer == 0)
+                    toPlayer = dir;
+                _crownVel = new Vector2(toPlayer * 2f, -4f);
+                _crownRotVel = toPlayer * 0.06f;
+            }
             SoundEngine.PlaySound(SoundID.Tink with { Pitch = -0.2f, Volume = 0.6f }, _crownPos);
         }
 
@@ -108,6 +229,22 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             _crownPos.Y = ground - CrownRestOffset;
             _crownRot *= 0.4f; // почти выравнивается, лёжа на песке
             _crownMode = CrownMode.Landed;
+
+            // Смерть: скорость подбираем так, чтобы трение остановило корону у ног игрока
+            if (State == CrabState.Dying)
+            {
+                Player player = Main.player[NPC.target];
+                float distance = Math.Abs(player.Center.X - _crownPos.X) - CrownRollStopNearPlayer;
+                if (distance > 8f)
+                {
+                    int toPlayer = Math.Sign(player.Center.X - _crownPos.X);
+                    float speed = MathHelper.Clamp(distance * (1f - CrownRollFriction), CrownRollMinSpeed, CrownRollMaxSpeed);
+                    _crownVel = new Vector2(toPlayer * speed, 0f);
+                    _crownRollStartSpeed = speed;
+                    _crownRollTraveled = 0f;
+                    _crownMode = CrownMode.Rolling;
+                }
+            }
             SoundEngine.PlaySound(SoundID.Tink with { Pitch = 0.1f, Volume = 0.5f }, _crownPos);
 
             for (int i = 0; i < 6; i++)
@@ -229,6 +366,18 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             // раскачивают её на ободе, сидя на панцире, а не отрывают от него, а слетевшая
             // корона вращается вокруг обода. Единый пивот нужен ещё и затем, чтобы возврат
             // на голову не дёргался в момент старта.
+            if (_crownMode == CrownMode.Hidden)
+                return;
+            if (_crownMode == CrownMode.Emerging)
+            {
+                DrawEmergingCrown(spriteBatch, screenPos, tex);
+                return;
+            }
+
+            // Конец сцены смерти: корона рассыпается последней
+            if (State == CrabState.Dying && DeathElapsed > DeathCrownFadeStart)
+                drawColor *= 1f - MathHelper.Clamp((DeathElapsed - DeathCrownFadeStart) / (float)(DyingTicks - DeathCrownFadeStart), 0f, 1f);
+
             Vector2 origin = new Vector2(tex.Width / 2f, tex.Height);
             Vector2 pos;
             if (_crownMode == CrownMode.Seated)
@@ -257,6 +406,30 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             if (glow > 0f && _crownMode == CrownMode.Seated && _crownGlowTex.Value != null)
                 spriteBatch.Draw(_crownGlowTex.Value, pos - screenPos, null, Color.White * glow, rot, origin, crownScale, fx, 0f);
+        }
+
+        // Встающая из песка корона: рисуем только часть над поверхностью, иначе закопанный
+        // низ просвечивал бы сквозь грунт. Свет берём в точке короны, а не у короля под землёй
+        private void DrawEmergingCrown(SpriteBatch spriteBatch, Vector2 screenPos, Texture2D tex)
+        {
+            float height = tex.Height * NPC.scale;
+            float topY = _crownPos.Y - height;
+            int visibleRows = (int)(MathHelper.Clamp(_crownEmergeSurfaceY - topY, 0f, height) / NPC.scale);
+            if (visibleRows <= 0)
+                return;
+
+            Rectangle src = new Rectangle(0, 0, tex.Width, visibleRows);
+            Vector2 origin = new Vector2(tex.Width / 2f, 0f);
+            Vector2 top = new Vector2(_crownPos.X, topY);
+            Color light = Lighting.GetColor(top.ToTileCoordinates());
+            SpriteEffects fx = NPC.spriteDirection * ClawDirFix > 0f ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+
+            spriteBatch.Draw(tex, top - screenPos, src, light, 0f, origin, NPC.scale, fx, 0f);
+            if (_crownGlowTex.Value != null)
+            {
+                float glow = 0.55f + 0.3f * (float)Math.Sin(Main.GameUpdateCount * 0.12f);
+                spriteBatch.Draw(_crownGlowTex.Value, top - screenPos, src, Color.White * glow, 0f, origin, NPC.scale, fx, 0f);
+            }
         }
     }
 }

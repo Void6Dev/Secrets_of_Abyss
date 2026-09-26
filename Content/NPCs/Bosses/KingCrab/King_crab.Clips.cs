@@ -1153,7 +1153,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // Между «последним взглядом» (12) и оседанием (44) было 32 тика на два ключа.
         // Добавлены: дрожь (20), последнее усилие подняться (28), срыв (36).
         // Клешни падают ВРОЗЬ и активная (передняя) держится дольше: 68 против 52.
-        private static AnimClip BuildDeath() => new AnimClip("death", DyingTicks, loop: false)
+        private static AnimClip BuildDeath() => new AnimClip("death", DeathClipTicks, loop: false)
             .Key(LayerBody, 0f)
             .Key(LayerBody, 12f, rot: -0.12f, oy: -10f, ease: EaseMode.EaseOut)
             .Key(LayerBody, 20f, rot: -0.09f, oy: -9f, ox: -2f)                 // держится, но дрожит

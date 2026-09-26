@@ -361,6 +361,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             {
                 case CrabState.Dying:
                     return "death";
+                case CrabState.Intro:
+                    // Под песком гребёт, наружу — раскрытием и фазами полёта, приземлился — рёв
+                    if (SubState < IntroSubErupt)
+                        return "burrow_swim";
+                    if (SubState < IntroSubRoar)
+                        return BurrowMaxAir - Timer < BurrowEruptClipTicks ? "burrow_erupt" : AirborneClip();
+                    return "roar";
                 case CrabState.Phase2Transition:
                     return "phase2_transition";
                 case CrabState.ClawSlam:

@@ -372,6 +372,8 @@ Mods: {
 		Misc: {
 			AltarNeedsBait: The altar hungers for a royal offering...
 			KingCrabRageWarning: The tide churns — the King Crab will not let you leave his waters!
+			KingCrabTitle: King Crab
+			KingCrabSubtitle: Lord of the Tide of Shadows
 			SealLocked1: The seal holds. The crown of the King Crab still rules this water.
 			SealLocked2: The seal holds. Nothing burns beyond the world yet.
 			SealLocked3: The seal holds. The jungle still keeps its bulb closed.

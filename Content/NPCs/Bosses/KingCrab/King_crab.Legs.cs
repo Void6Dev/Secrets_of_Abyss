@@ -61,6 +61,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             UpdateFlashesAndCracks();
             UpdateLiveliness();
             RecordAfterimage();
+            UpdateDeathScene();
         }
 
         public override bool PreDraw(SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor)
@@ -134,22 +135,32 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // Под толщей грунта самого короля не видно — на поверхности остаются только пыль,
             // бугор и слетевшая корона (их рисуют блоки выше и DrawCrown ниже)
+            // В сцене смерти ноги и клешни гаснут, пока панцирь осыпается песком
+            Color partColor = drawColor * DeathPartOpacity();
+
             if (!BurrowBuried)
             {
-                DrawLegs(spriteBatch, screenPos, drawColor);
+                DrawLegs(spriteBatch, screenPos, partColor);
                 DrawBody(spriteBatch, screenPos, drawColor); // тело рисуем сами — ради squash & stretch
                 DrawEyesGlow(spriteBatch); // свечение глаз на морде, под короной и клешнями
+
+                if (State == CrabState.Dying)
+                {
+                    SoAVfx.BeginAdditive(spriteBatch);
+                    DrawDeathCracks(spriteBatch); // трещины под клешнями: свет идёт из панциря
+                    SoAVfx.EndAdditive(spriteBatch);
+                }
             }
 
             DrawCrown(spriteBatch, screenPos, drawColor); // корона на панцире, под клешнями («забота» ложится поверх)
 
             if (!BurrowBuried)
             {
-                DrawClawBack(spriteBatch, screenPos, drawColor);  // обе клешни перед панцирем; задняя — под передней
-                DrawClawFront(spriteBatch, screenPos, drawColor);
+                DrawClawBack(spriteBatch, screenPos, partColor);  // обе клешни перед панцирем; задняя — под передней
+                DrawClawFront(spriteBatch, screenPos, partColor);
             }
 
-            if (!BurrowBuried)
+            if (!BurrowBuried && DeathWipe() <= 0f)
                 DrawShellGrains(spriteBatch); // налипший песок поверх панциря, под аурой ярости
 
             // «Ярость океана» — вторым проходом поверх всей туши
@@ -206,7 +217,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             // иначе мелкие подскоки/шаг-апы дёргают лапки между «стоит» и «висит»
             bool stateAir = (State == CrabState.JumpCrush && SubState >= 1f)
                          || (State == CrabState.Burrow && SubState >= BurrowSubSink) // с провала лапы уже не на грунте
-                         || (State == CrabState.KnightCourt && SubState >= 2f);
+                         || (State == CrabState.KnightCourt && SubState >= 2f)
+                         || (State == CrabState.Intro && SubState == IntroSubErupt);
             bool groundedNow = NPC.velocity.Y == 0f || NPC.collideY;
             if (!groundedNow || stateAir)
                 _airborneTicks++;
@@ -431,7 +443,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             float halfHeightWorld = tex.Height / frameCount / 2f * NPC.scale;
             Vector2 drawCenter = AnimatedBodyCenter() + new Vector2(0f, halfHeightWorld * (1f - sy));
 
-            DrawBodySprite(drawCenter, AnimatedBodyRotation(), scale, drawColor, screenPos);
+            DrawBodySprite(drawCenter, AnimatedBodyRotation(), scale, drawColor, screenPos, DeathWipe());
         }
 
         // Точка, ПРИКЛЕЕННАЯ к панцирю, в мировых координатах — с той же поправкой на squash &

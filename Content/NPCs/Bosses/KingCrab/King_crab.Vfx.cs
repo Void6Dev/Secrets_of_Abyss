@@ -79,6 +79,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return true;
             if (State == CrabState.KnightCourt && SubState >= 2f)
                 return true;
+            if (State == CrabState.Intro && SubState == IntroSubErupt)
+                return true;
             return Math.Abs(NPC.velocity.X) > 9f;
         }
 
@@ -299,7 +301,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         {
             if (InOceanRage)
                 return new Color(255, 45, 25);
-            if ((State == CrabState.Burrow || State == CrabState.KnightCourt) && SubState >= 2f)
+            if ((State == CrabState.Burrow || State == CrabState.KnightCourt) && SubState >= 2f
+                || State == CrabState.Intro && SubState == IntroSubErupt)
                 return new Color(210, 180, 120);
             return new Color(120, 190, 255);
         }
@@ -327,9 +330,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // Приливная аура через шейдер SoA:CrabAura (рисовать в отдельном аддитив-батче)
         private void DrawWaterAura(SpriteBatch sb)
         {
+            // Под толщей грунта ауры нет: она светила сквозь землю и выдавала подземный ход
+            if (BurrowBuried)
+                return;
             Vector2 c = NPC.Center - new Vector2(0f, BodyLift * 0.4f);
             float breathe = 0.85f + 0.15f * (float)Math.Sin(Main.GameUpdateCount * 0.06f);
-            float opacity = (Phase2 ? 0.5f : 0.32f) * breathe;
+            float opacity = (Phase2 ? 0.5f : 0.32f) * breathe * DeathPartOpacity(); // гаснет вместе с тушей
             SoAVfx.DrawGlow(sb, c, NPC.width * 1.15f, opacity);
         }
 
@@ -337,6 +343,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // (без шейдера — рисовать в отдельном аддитив-батче, не смешивая с DrawWaterAura)
         private void DrawTintAuras(SpriteBatch sb)
         {
+            float alive = DeathPartOpacity();
+            if (BurrowBuried || alive <= 0f)
+                return;
             Vector2 c = NPC.Center - new Vector2(0f, BodyLift * 0.4f);
             float breathe = 0.85f + 0.15f * (float)Math.Sin(Main.GameUpdateCount * 0.06f);
             float baseSize = NPC.width * 1.15f;
@@ -344,7 +353,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             // Разгорается 40 тиков (_phase2Aura), а не включается скачком по HP
             if (_phase2Aura > 0.01f)
             {
-                Color rage = new Color(255, 90, 40) * ((Desperate ? 0.5f : 0.28f) * breathe * _phase2Aura);
+                Color rage = new Color(255, 90, 40) * ((Desperate ? 0.5f : 0.28f) * breathe * _phase2Aura * alive);
                 rage.A = 0;
                 SoAVfx.DrawTintedGlow(sb, c, new Vector2(baseSize * 0.9f), rage);
             }
@@ -353,7 +362,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             {
                 float pulse = 0.55f + 0.45f * (float)Math.Sin(Main.GameUpdateCount * 0.3f);
                 float fade = _vulnerableTimer / (float)ShellCrackTicks;
-                Color crack = new Color(255, 70, 30) * (pulse * (0.4f + 0.6f * fade));
+                Color crack = new Color(255, 70, 30) * (pulse * (0.4f + 0.6f * fade) * alive);
                 crack.A = 0;
                 SoAVfx.DrawTintedGlow(sb, c, new Vector2(baseSize * 1.1f * (0.9f + 0.2f * pulse)), crack);
 
@@ -361,10 +370,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 // а трещина в панцире должна обводить сам панцирь
                 float sx = 1f + _bodySquash * BodySquashAmount;
                 float sy = 1f - _bodySquash * BodySquashAmount;
-                Color outline = new Color(255, 60, 30) * (0.3f * fade * pulse);
+                Color outline = new Color(255, 60, 30) * (0.3f * fade * pulse * alive);
                 outline.A = 0;
                 DrawBodySprite(AnimatedBodyCenter(), AnimatedBodyRotation(),
-                    new Vector2(NPC.scale * sx, NPC.scale * sy) * 1.05f, outline, Main.screenPosition);
+                    new Vector2(NPC.scale * sx, NPC.scale * sy) * 1.05f, outline, Main.screenPosition, DeathWipe());
             }
         }
 
@@ -661,7 +670,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // от угла тела, иначе он выглядит наклейкой
         private void DrawShellGlint(SpriteBatch sb)
         {
-            if (BurrowBuried)
+            if (BurrowBuried || DeathWipe() > 0f) // блеск на осыпающемся панцире висел бы в воздухе
                 return;
 
             float rot = AnimatedBodyRotation();
@@ -851,15 +860,21 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         }
 
         // Общий примитив отрисовки панциря — переиспользуют DrawBody и афтеримиджи
-        private void DrawBodySprite(Vector2 worldCenter, float rotation, Vector2 scale, Color color, Vector2 screenPos)
+        // topCut 0..1 — какая доля спрайта сверху уже осыпалась (сцена смерти): верх срезаем,
+        // а оставшаяся часть стоит на прежнем месте
+        private void DrawBodySprite(Vector2 worldCenter, float rotation, Vector2 scale, Color color, Vector2 screenPos,
+            float topCut = 0f)
         {
             Texture2D tex = TextureAssets.Npc[Type].Value;
             if (tex == null)
                 return;
             int frameCount = Math.Max(1, Main.npcFrameCount[Type]);
             int frameHeight = tex.Height / frameCount;
-            Rectangle src = new Rectangle(0, NPC.frame.Y, tex.Width, frameHeight);
-            Vector2 origin = new Vector2(tex.Width / 2f, frameHeight / 2f);
+            int cut = (int)(frameHeight * MathHelper.Clamp(topCut, 0f, 1f));
+            if (cut >= frameHeight)
+                return;
+            Rectangle src = new Rectangle(0, NPC.frame.Y + cut, tex.Width, frameHeight - cut);
+            Vector2 origin = new Vector2(tex.Width / 2f, frameHeight / 2f - cut);
             SpriteEffects fx = NPC.spriteDirection == 1 ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
             Main.EntitySpriteDraw(tex, worldCenter - screenPos, src, color, rotation, origin, scale, fx, 0);
         }
