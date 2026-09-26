@@ -35,6 +35,15 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float AnimIntensity = 1f;   // общий множитель силы всех клипов (крути тут)
         private const int HurtClipCooldown = 20;  // не дёргаем «hurt» чаще, чем раз в треть секунды
         private const float EyeGlowSize = 46f;    // диаметр глоу глаз (px мира до NPC.scale)
+        // Итоговая поза догоняет цель с этой долей за тик: гасит скачки на стыках клипов,
+        // которые не закрывает кроссфейд. 1 — выключено; меньше 0.4 — вялые удары
+        private const float PoseSmoothing = 0.55f;
+
+        // ---------- РАЗВОРОТ ----------
+        // Разворот зеркалит весь риг за один тик. Чтобы это читалось как поворот туши,
+        // а не как подмена картинки, силуэт после смены стороны «раскрывается» из узкого
+        private const int TurnUnfoldTicks = 9;
+        private const float TurnSquashMin = 0.3f;
 
         // ---------- HIT-STOP ----------
         private const int HitStopCap = 10;        // предохранитель: дольше поза стоять не должна
@@ -78,6 +87,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private int _hurtClipCooldown;
         private int _lastHurtAmount;   // сколько сняли последним попаданием — выбор градации hurt
         private int _animHitStop;      // тиков, на которые поза замерла
+        private int _turnUnfold;       // тиков осталось раскрываться после разворота
 
         // Ключ стадии: пока он не меняется, Play() на том же имени — no-op (и это правильно).
         // Как только меняется — клип перезапускается, даже если имя то же (второй вал TideCall).
@@ -157,7 +167,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 string clip = DesiredBaseClip();
                 bool stageChanged = RefreshStageKey();
                 _anim.Play(clip, restart: stageChanged, fade: ClipFade(clip));
-                _anim.Update();
+                _anim.Update(ActionTempo); // клип атаки идёт в темпе её Timer'а — удар в кадр удара
             }
 
             UpdateBreathing();
@@ -208,6 +218,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private void UpdateAnimTimers()
         {
             if (_hurtClipCooldown > 0) _hurtClipCooldown--;
+            if (_turnUnfold > 0) _turnUnfold--;
+            _stepVisualLift *= StepVisualDecay;
             if (_clawShake > 0) _clawShake--;
             if (_hurtCrownTilt > 0) _hurtCrownTilt--;
             if (_idleTwitchTimer > 0) _idleTwitchTimer--;
@@ -319,19 +331,23 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         // Длина кроссфейда по ПАРЕ (откуда → куда): после тяжёлого удара поза отпускает
         // медленно, продолжение удара блендить почти не нужно, быстрый выпад — резко.
+        // Самые короткие фейды (3 тика) читались рывком — нижняя граница поднята; вес
+        // выпадам теперь дают hit-stop и сглаживание позы, а не обрыв перехода
         private float ClipFade(string to)
         {
-            if (IsRecoverClip(to) || to is "sweep_dash" or "grip_lunge" or "burrow_erupt")
-                return 3f;
-            if (to is "jump_rise" or "jump_apex" or "jump_fall" or "burrow_dive" or "burrow_swim")
+            if (IsRecoverClip(to))
                 return 6f;
+            if (to is "sweep_dash" or "grip_lunge" or "burrow_erupt")
+                return 5f;
+            if (to is "jump_rise" or "jump_apex" or "jump_fall" or "burrow_dive" or "burrow_swim")
+                return 9f;
 
             string from = _anim.CurrentClip;
             if (IsRecoverClip(from))
-                return 18f;
+                return 22f;
             if (from is "sweep_dash" or "grip_lunge")
-                return 5f;
-            return 10f;
+                return 9f;
+            return 14f;
         }
 
         private static bool IsRecoverClip(string name) => name
@@ -422,6 +438,16 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             return _walkClipActive ? "walk" : "idle";
         }
 
+        // Ширина силуэта после разворота: из узкого в полный по easeOut — разворот читается
+        // поворотом туши, а не мгновенной подменой картинки
+        private float TurnSquash()
+        {
+            if (_turnUnfold <= 0)
+                return 1f;
+            float t = 1f - _turnUnfold / (float)TurnUnfoldTicks;
+            return MathHelper.Lerp(TurnSquashMin, 1f, 1f - (1f - t) * (1f - t));
+        }
+
         // --- Вторичная физика ---
 
         // Процедурный крен от ускорения: разгон и торможение сразу получают вес.
@@ -509,7 +535,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private Vector2 AnimatedBodyCenter()
         {
             LayerPose p = AnimPose(LayerBody);
-            return NPC.Center - new Vector2(0f, BodyLift - _gaitBob * GaitBobHeight)
+            return NPC.Center - new Vector2(0f, BodyLift - _gaitBob * GaitBobHeight - _stepVisualLift)
                 + new Vector2(p.Offset.X * AnimDirSign, p.Offset.Y).RotatedBy(NPC.rotation) * NPC.scale;
         }
 

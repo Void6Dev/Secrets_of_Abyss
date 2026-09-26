@@ -745,6 +745,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private void OnTurnAround()
         {
             _anim.PlayOnce("turn");
+            _turnUnfold = TurnUnfoldTicks;
 
             if (Main.dedServ || _legs == null)
                 return;

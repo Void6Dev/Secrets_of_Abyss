@@ -7,6 +7,7 @@ using Terraria.Audio;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics.Animation;
+using SoA.Common.Utils;
 using SoA.Content.Projectiles;
 
 namespace SoA.Content.NPCs.Bosses.KingCrab
@@ -37,7 +38,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float ChargeSpeed = 9.5f;
         private const float Gravity = 0.4f;
         private const float MaxFallSpeed = 12f;
-        private const float StepUpSpeed = 6.2f;   // подскок через уступ, если упёрся в стену
+        private const float StepUpSpeed = 6.2f;   // подскок через стену выше MaxStepUp
+        private const float MaxStepUp = 36f;      // уступ до двух блоков проходит шагом, не упираясь
+        private const float StepVisualDecay = 0.65f; // как быстро картинка догоняет шаг вверх
 
         // ---------- Тайминги ----------
         private const int MarchMinTicks = 40;
@@ -192,6 +195,11 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case PaladinState.Slam: AISlam(target); break;
                 default: AIMarch(target); break;
             }
+
+            // Ступенька по ходу — шагом вверх, а не упором: иначе таран об один блок
+            // засчитывался как «влетел в стену» и паладин оглушался на три секунды
+            NPC.gfxOffY *= StepVisualDecay;
+            NPC.gfxOffY += SoAPhysics.TryStepUp(NPC, MaxStepUp);
         }
 
         private void UpdateStats()

@@ -92,20 +92,53 @@ namespace SoA.Common.Graphics
             AlphaDestinationBlend = Blend.One,
         };
 
+        // Локальное преобразование поверх камеры: все Begin/End этого класса его соблюдают, поэтому
+        // эффекты, которые сами переключают батч посреди отрисовки сущности (глоу, аура), не
+        // выпадают из него. Сейчас им пользуется разворот короля (силуэт раскрывается из узкого).
+        // Экранные пиксели; по умолчанию Identity. Ставить и снимать только парой
+        // BeginLocalTransform / EndLocalTransform
+        private static Matrix _localTransform = Matrix.Identity;
+
+        private static Matrix WorldTransform => _localTransform * Main.GameViewMatrix.TransformationMatrix;
+
+        public static void BeginLocalTransform(SpriteBatch sb, Matrix screenSpaceTransform)
+        {
+            sb.End();
+            _localTransform = screenSpaceTransform;
+            sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, Main.DefaultSamplerState,
+                DepthStencilState.None, RasterizerState.CullCounterClockwise, null, WorldTransform);
+        }
+
+        public static void EndLocalTransform(SpriteBatch sb)
+        {
+            sb.End();
+            _localTransform = Matrix.Identity;
+            sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, Main.DefaultSamplerState,
+                DepthStencilState.None, RasterizerState.CullCounterClockwise, null, WorldTransform);
+        }
+
+        // Сжатие по горизонтали вокруг точки мира: scaleX = 1 — без изменений
+        public static Matrix HorizontalSquash(Vector2 worldCenter, float scaleX)
+        {
+            Vector2 c = worldCenter - Main.screenPosition;
+            return Matrix.CreateTranslation(-c.X, -c.Y, 0f) * Matrix.CreateScale(scaleX, 1f, 1f)
+                * Matrix.CreateTranslation(c.X, c.Y, 0f);
+        }
+
         // Свап в аддитивный Immediate-режим (для шейдеров/свечения) и обратно в обычную отрисовку.
         // Пара строго симметрична: на каждый BeginAdditive — свой EndAdditive.
         public static void BeginAdditive(SpriteBatch sb)
         {
             sb.End();
             sb.Begin(SpriteSortMode.Immediate, GlowBlend, null, null, null, null,
-                Main.GameViewMatrix.TransformationMatrix);
+                WorldTransform);
         }
 
         public static void EndAdditive(SpriteBatch sb)
         {
             sb.End();
             sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, null, null, null, null,
-                Main.GameViewMatrix.TransformationMatrix);
+                WorldTransform);
         }
 
         // Свап в Immediate + обычный AlphaBlend — для шейдеров непрозрачной пыли/дыма,
@@ -114,7 +147,7 @@ namespace SoA.Common.Graphics
         {
             sb.End();
             sb.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend, null, null, null, null,
-                Main.GameViewMatrix.TransformationMatrix);
+                WorldTransform);
         }
 
         // То же самое, но с точечной фильтрацией и в паре с EndPixelBatch — для
@@ -125,7 +158,7 @@ namespace SoA.Common.Graphics
             sb.End();
             sb.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend, SamplerState.PointClamp,
                 DepthStencilState.None, RasterizerState.CullCounterClockwise, null,
-                Main.GameViewMatrix.TransformationMatrix);
+                WorldTransform);
         }
 
         // Возврат в состояние ванильного батча сущностей
@@ -134,7 +167,7 @@ namespace SoA.Common.Graphics
             sb.End();
             sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, Main.DefaultSamplerState,
                 DepthStencilState.None, RasterizerState.CullCounterClockwise, null,
-                Main.GameViewMatrix.TransformationMatrix);
+                WorldTransform);
         }
 
         // Приливная аура через SoA:CrabAura (каустика расходящимися кольцами + пузыри).

@@ -4,6 +4,7 @@ using Terraria;
 using Terraria.GameContent;
 using Terraria.ID;
 using Terraria.ModLoader;
+using SoA.Common.Utils;
 
 namespace SoA.Content.Projectiles
 {
@@ -13,6 +14,7 @@ namespace SoA.Content.Projectiles
     public class KingCrabWave : ModProjectile
     {
         private const int FrameTicks = 5;
+        private const float MaxStepUp = 36f; // вал по грунту взбирается на уступ до двух блоков
 
         public override string Texture => "SoA/Content/NPCs/Bosses/KingCrab/KingCrabWave";
 
@@ -70,9 +72,10 @@ namespace SoA.Content.Projectiles
 
         public override bool OnTileCollide(Vector2 oldVelocity)
         {
-            // Врезался в стену — гаснет; коснулся пола — продолжает катиться
+            // Упёрся в невысокий уступ — взбирается; в настоящую стену — гаснет;
+            // коснулся пола — продолжает катиться
             if (Projectile.velocity.X != oldVelocity.X)
-                return true;
+                return !SoAPhysics.TryStepUp(Projectile, oldVelocity, MaxStepUp);
             Projectile.velocity.Y = 0f;
             return false;
         }

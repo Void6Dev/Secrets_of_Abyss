@@ -61,6 +61,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 LayerBody, LayerCrown, LayerClawFront, LayerClawBack, LayerLegs, LayerEyes);
 
             player.OnEvent = OnAnimEvent; // п.1.2: метки клипов = кадрово точная косметика
+            player.OutputResponse = PoseSmoothing;
             return player;
         }
 

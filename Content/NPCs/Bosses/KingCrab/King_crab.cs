@@ -11,6 +11,7 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
 using SoA.Common.Systems;
+using SoA.Common.Utils;
 using SoA.Content.Items.Materials;
 using SoA.Content.Items.Weapons;
 using SoA.Content.Projectiles;
@@ -71,9 +72,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const int Phase2TransitionTicks = 130; // = длина клипа phase2_transition
 
         private const int RecoverTicks = 26;           // общий отход после тяжёлых атак
-        private const int ScuttleTicks = 90;           // пауза между атаками в фазе 1
-        private const int ScuttleTicksPhase2 = 55;
-        private const int ScuttleTicksDesperate = 32;
+        // Пауза между атаками и скорость хода — плавные по здоровью, см. King_crab.Tempo.cs
 
         // ---------- ПАРАМЕТРЫ АТАК ----------
         private const int ShockwaveDamage = 28;
@@ -82,6 +81,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const int TideWaveDamage = 26;
 
         private const int VolleyShots = 6;             // веер из 6 пузырей (реф)
+        private static readonly float[] VolleyShotTicks = { 11f, 18f, 25f, 32f, 39f, 46f }; // = щелчки пинцера в клипе
         private const float VolleySpread = 0.42f;      // полураствор веера (рад)
         private const float VolleySpeed = 7.5f;
 
@@ -161,9 +161,6 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         // ---------- ПОВЕДЕНИЕ ----------
         private const float WalkAccel = 0.16f;
-        private const float WalkSpeedMax = 4.2f;
-        private const float WalkSpeedMaxPhase2 = 6f;
-        private const float WalkSpeedMaxDesperate = 7.5f;
         private const float KeepDistance = 190f;       // ближе не подходит, чтобы не толкать игрока
         private const float Gravity = 0.45f;
         private const float MaxFallSpeed = 16f;
@@ -177,6 +174,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float DropHopSpeed = 5f;         // горизонтальный подскок в сторону игрока
         private const float DropHopLift = 5f;          // и подброс перед прыжком с уступа
 
+        private const float TurnDeadzone = 56f;        // ближе этого по X к центру король не разворачивается
         private const float MeleeRange = 260f;         // дальность слэма и захлопа
         private const float SweepRange = 520f;
         private const float ProudDistance = 700f;      // дальше этого — «гордая поза»
@@ -383,8 +381,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case CrabState.CourtDuel: AICourtDuel(target); break;
             }
 
-            if (Timer > 0f)
-                Timer--;
+            // Ступенька по ходу — шагом вверх. Раньше и один блок останавливал рывок
+            // как «удар о стену», а ходьба упиралась и подпрыгивала
+            float step = SoAPhysics.TryStepUp(NPC, MaxStepUp);
+            if (step > 0f && !Main.dedServ)
+                _stepVisualLift += step;
+
+            AdvanceTimer();
         }
 
         // Цель и деспаун. Возвращает false, если крабу больше не с кем драться
@@ -476,6 +479,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         {
             float dist = NPC.Distance(target.Center);
 
+            // Продолжение связки, решённое на выходе из прошлой атаки
+            if (TryTakeQueuedCombo(dist, out CrabState combo))
+            {
+                StartAttack(combo);
+                return;
+            }
+
             // Новая фаза — новый цикл: мешок фазы 1 не должен откладывать атаки фазы 2
             if (_attackBagPhase2 != Phase2)
             {
@@ -499,9 +509,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (count == 0)
                 count = CollectReadyAttacks(dist, ready, CrabState.Scuttle);
 
-            CrabState next = count > 0 ? ready[Main.rand.Next(count)] : CrabState.BubbleVolley;
-            _attackBag.Remove(next);
+            StartAttack(count > 0 ? ready[Main.rand.Next(count)] : CrabState.BubbleVolley);
+        }
 
+        private void StartAttack(CrabState next)
+        {
+            _attackBag.Remove(next); // и продолжение связки засчитывается в цикл мешка
             _lastAttack = next;
             _attackConnected = false;
             EnterState(next, AttackDuration(next));
@@ -564,23 +577,31 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             CrabState.CrownCommand => CrownCommandTicks,
             CrabState.TsunamiClap => TsunamiWindupTicks,
             CrabState.RoyalRoar => RoarWindupTicks,
-            _ => ScuttleTicks,
+            _ => PauseBetweenAttacks(),
         };
 
-        // Возврат в стойку: промах отзывается «недовольством» (реф)
+        // Возврат в стойку: промах отзывается «недовольством» (реф).
+        // На низком здоровье вместо паузы — короткий вдох и продолжение связки
         private void ReturnToScuttle(bool heavyAttack = false)
         {
-            if (!_attackConnected)
+            bool combo = TryQueueCombo(State);
+            if (!_attackConnected && !combo)
                 _sulkTimer = SulkTicks;
             if (heavyAttack)
-                _vulnerableTimer = ShellCrackTicks; // окно ShellCrack: 1.5x урона
+                _vulnerableTimer = ShellCrackTicks; // окно ShellCrack: 1.5x урона — живёт и во время связки
 
-            EnterState(CrabState.Scuttle, Desperate ? ScuttleTicksDesperate
-                : Phase2 ? ScuttleTicksPhase2 : ScuttleTicks);
+            EnterState(CrabState.Scuttle, combo ? ComboGapTicks : PauseBetweenAttacks());
         }
 
         private void EnterState(CrabState state, float duration, float subState = 0f)
         {
+            // Темп атаки фиксируется на входе: HP меняется посреди замаха, а клип и Timer
+            // должны идти одной скоростью до конца атаки
+            _actionTempo = IsTempoState(state) ? TempoForHealth() : 1f;
+            // Ярость, кат-сцена и прочие стейты вне атак обрывают связку
+            if (state != CrabState.Scuttle && !IsTempoState(state))
+                _queuedCombo = CrabState.Scuttle;
+
             State = state;
             Timer = duration;
             SubState = subState;
@@ -662,7 +683,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 FaceTarget(target);
                 if (Timer <= 0f)
                 {
-                    NPC.velocity.X = NPC.spriteDirection * SweepDashSpeed;
+                    NPC.velocity.X = NPC.spriteDirection * SweepDashSpeed * _actionTempo; // короче по времени — быстрее, дистанция та же
                     SoundEngine.PlaySound(SoundID.Item1 with { Pitch = -0.4f }, NPC.Center);
                     EnterSubState(1f, ClawSweepDashTicks);
 
@@ -732,7 +753,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 FaceTarget(target);
                 if (Timer <= 0f)
                 {
-                    NPC.velocity.X = NPC.spriteDirection * GripLungeSpeed;
+                    NPC.velocity.X = NPC.spriteDirection * GripLungeSpeed * _actionTempo;
                     NPC.velocity.Y = -3f;
                     SoundEngine.PlaySound(SoundID.Item17 with { Pitch = -0.7f }, NPC.Center);
                     EnterSubState(1f, GripLungeTicks);
@@ -772,9 +793,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Brake();
             FaceTarget(target);
 
-            int elapsed = (int)(VolleyTicks - Timer);
-            if (elapsed is 11 or 18 or 25 or 32 or 39 or 46)
+            foreach (float shotTick in VolleyShotTicks)
             {
+                if (!TimerPassed(VolleyTicks - shotTick))
+                    continue;
                 int shot = (int)StateData;
                 StateData = shot + 1;
                 FireBubble(target, shot);
@@ -814,7 +836,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Brake();
             FaceTarget(target);
 
-            if (Timer % 6f == 0f)
+            if (EveryTicks(6))
                 SpawnWaterColumn(4);
 
             if (Timer > 0f)
@@ -1058,7 +1080,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Brake();
             FaceTarget(target);
 
-            if (Timer % 4f == 0f)
+            if (EveryTicks(4))
                 SpawnSandBurst(NPC.Bottom - new Vector2(90f, 6f), 180, 10, 4, 3f, 1f, 4f);
 
             if (Timer > 0f)
@@ -1088,9 +1110,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // Земля и камни осыпаются по краю ямы, а не там, куда уже провалился корпус
             Vector2 rim = new Vector2(NPC.Center.X - 80f, _burrowSurfaceY - 8f);
-            if (Timer % 2f == 0f)
+            if (EveryTicks(2))
                 SpawnSandBurst(rim, 160, 10, 5, 3.5f, 1f, 5f);
-            if (Timer % 5f == 0f)
+            if (EveryTicks(5))
                 SpawnSandBurst(rim, 160, 10, 2, 2.5f, 2f, 6f, 0.9f, 1.4f, DustID.Stone);
 
             ScreenRumble(BurrowRumbleMin);
@@ -1120,10 +1142,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // Чем ближе к точке выхода, тем сильнее трясёт
             float closeness = 1f - MathHelper.Clamp(distX / BurrowRumbleRange, 0f, 1f);
-            if (Timer % BurrowRumbleInterval == 0f)
+            if (EveryTicks(BurrowRumbleInterval))
                 ScreenRumble(MathHelper.Lerp(BurrowRumbleMin, BurrowRumbleMax, closeness));
 
-            if (Timer % BurrowTrailInterval == 0f)
+            if (EveryTicks(BurrowTrailInterval))
                 SpawnSurfaceTrail(NPC.Center.X, target.Center.Y, closeness);
 
             if (distX > BurrowExitTolerance && Timer > 0f)
@@ -1146,9 +1168,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Vector2 surface = new Vector2(StateData, surfaceY);
 
             // Бугор растёт по мере приближения выхода
-            if (Timer % 9f == 0f)
+            if (EveryTicks(9))
                 TriggerBurrowBurst(surface, 90f + 90f * progress, 50f + 50f * progress, 28f);
-            if (Timer % 3f == 0f)
+            if (EveryTicks(3))
                 SpawnSandBurst(surface - new Vector2(45f, 6f), 90, 8, 5, 3f, 2f, 6f + 4f * progress);
 
             ScreenRumble(MathHelper.Lerp(BurrowRumbleMax * 0.7f, BurrowRumbleMax, progress));
@@ -1229,7 +1251,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // Места появления рыцарей предупреждаются заранее: раньше бугор вспучивался
             // одновременно со спавном, и уклониться было нечем
-            if (Timer == 20f)
+            if (TimerPassed(20f))
             {
                 for (int i = 0; i < 2; i++)
                 {
@@ -1464,7 +1486,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 ScreenPunch(6f, 18, Vector2.UnitY);
                 if (!Main.dedServ)
                     PlayClip("burrow_land", once: true);
-                EnterState(CrabState.Scuttle, ScuttleTicksPhase2);
+                EnterState(CrabState.Scuttle, PauseBetweenAttacks());
             }
         }
 
@@ -1686,9 +1708,6 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         private bool Landed() => NPC.velocity.Y >= 0f && (NPC.collideY || NPC.velocity.Y == 0f);
 
-        private float MaxWalkSpeed() => Desperate ? WalkSpeedMaxDesperate
-            : Phase2 ? WalkSpeedMaxPhase2 : WalkSpeedMax;
-
         private void WalkToward(float targetX, float maxSpeed)
         {
             float dx = targetX - NPC.Center.X;
@@ -1713,8 +1732,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // запускает клип «turn» и зеркалит весь риг
         private void FaceTarget(Player target)
         {
-            int dir = Math.Sign(target.Center.X - NPC.Center.X);
+            float dx = target.Center.X - NPC.Center.X;
+            int dir = Math.Sign(dx);
             if (dir == 0)
+                return;
+            // Мёртвая зона: игрок над королём или прыгает через его центр — туша не
+            // дёргается разворотом туда-обратно каждые несколько тиков
+            if (dir != NPC.spriteDirection && NPC.spriteDirection != 0 && Math.Abs(dx) < TurnDeadzone)
                 return;
             NPC.direction = dir;
             NPC.spriteDirection = dir;
@@ -1763,6 +1787,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             writer.Write(_proudPose);
             writer.Write((short)_territoryWarnTimer); // клиенту нужен для пульса виньетки
             writer.Write(_homeX); // клиенту нужен, чтобы знать, в какую сторону вода
+            writer.Write(_actionTempo); // Timer и клип атаки идут с этим темпом на всех машинах
         }
 
         public override void ReceiveExtraAI(BinaryReader reader)
@@ -1774,6 +1799,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             _proudPose = reader.ReadBoolean();
             _territoryWarnTimer = reader.ReadInt16();
             _homeX = reader.ReadSingle();
+            _actionTempo = reader.ReadSingle();
         }
 
         #endregion

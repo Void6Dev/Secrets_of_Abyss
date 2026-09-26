@@ -126,6 +126,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             DrawAfterimages(spriteBatch, screenPos); // шлейф позади всего
 
+            // После разворота вся туша раскрывается из узкого силуэта (см. TurnSquash)
+            float turnSquash = TurnSquash();
+            bool squashing = turnSquash < 0.999f && !BurrowBuried;
+            if (squashing)
+                SoAVfx.BeginLocalTransform(spriteBatch, SoAVfx.HorizontalSquash(NPC.Center, turnSquash));
+
             // Под толщей грунта самого короля не видно — на поверхности остаются только пыль,
             // бугор и слетевшая корона (их рисуют блоки выше и DrawCrown ниже)
             if (!BurrowBuried)
@@ -148,6 +154,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // «Ярость океана» — вторым проходом поверх всей туши
             DrawRageOverlay(spriteBatch, screenPos, drawColor);
+
+            if (squashing)
+                SoAVfx.EndLocalTransform(spriteBatch);
 
             // Блик на мокром хитине и вспышки импактов — самым верхним слоем
             SoAVfx.BeginAdditive(spriteBatch);

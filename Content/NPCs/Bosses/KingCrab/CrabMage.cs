@@ -5,6 +5,7 @@ using Terraria.Audio;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics.Animation;
+using SoA.Common.Utils;
 using SoA.Content.Projectiles;
 
 namespace SoA.Content.NPCs.Bosses.KingCrab
@@ -40,7 +41,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float DriftSpeed = 2.6f;
         private const float Gravity = 0.35f;
         private const float MaxFallSpeed = 11f;
-        private const float StepUpSpeed = 6f;
+        private const float StepUpSpeed = 6f;     // подскок через стену выше MaxStepUp
+        private const float MaxStepUp = 36f;      // уступ до двух блоков проходит шагом, не упираясь
+        private const float StepVisualDecay = 0.65f;
 
         // ---------- Тайминги ----------
         private const int DriftMinTicks = 55;
@@ -167,6 +170,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case MageState.Blink: AIBlink(target); break;
                 default: AIDrift(target); break;
             }
+
+            NPC.gfxOffY *= StepVisualDecay;
+            if (State != MageState.Blink)
+                NPC.gfxOffY += SoAPhysics.TryStepUp(NPC, MaxStepUp); // ступенька — шагом, а не прыжком
         }
 
         private void ApplyGravity()

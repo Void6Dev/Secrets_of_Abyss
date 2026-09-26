@@ -503,12 +503,19 @@ namespace SoA.Common.Graphics.Animation
         // Полл-вариант событий: вернёт true один раз после пересечения метки
         public bool ConsumeEvent(string name) => _pendingEvents.Remove(name);
 
-        public void Update()
+        // Сглаживание итоговой позы (0..1]: 1 — выключено, меньше — поза догоняет цель за
+        // несколько тиков. Страховка от любых скачков, которые не закрывает кроссфейд:
+        // Snap-ключи, перезапуск клипа, резкий вход реакции. Цена — отставание на ~1 тик
+        public float OutputResponse { get; set; } = 1f;
+
+        // rate — скорость базового клипа (темп атаки владельца). Реакции (один-шоты)
+        // и кроссфейд идут в реальном времени: удар по боссу не должен замедляться с ним
+        public void Update(float rate = 1f)
         {
             if (_base != null)
             {
                 _prevTime = _time;
-                _time += 1f;
+                _time += rate;
                 if (_base.Loop)
                 {
                     if (_time >= _base.Duration)
@@ -554,7 +561,9 @@ namespace SoA.Common.Graphics.Animation
 
                 if (_oneShot != null)
                     basePose = LayerPose.Combine(basePose, LayerPose.Faded(_oneShot.Sample(layer, _oneShotTime), oneShotEnvelope));
-                _cache[layer] = basePose;
+                _cache[layer] = OutputResponse < 1f && _cache.TryGetValue(layer, out LayerPose shown)
+                    ? LayerPose.Lerp(shown, basePose, OutputResponse)
+                    : basePose;
             }
         }
 

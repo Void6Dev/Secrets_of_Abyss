@@ -5,6 +5,7 @@ using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
+using SoA.Common.Utils;
 
 namespace SoA.Content.Projectiles
 {
@@ -16,6 +17,7 @@ namespace SoA.Content.Projectiles
         public override string Texture => "SoA/Content/Projectiles/KingCrab/KingCrabShockwave";
 
         private const int Lifetime = 90;
+        private const float MaxStepUp = 36f; // волна по грунту взбирается на уступ до двух блоков
         public override void SetDefaults()
         {
             Projectile.width = 30;
@@ -52,9 +54,10 @@ namespace SoA.Content.Projectiles
 
         public override bool OnTileCollide(Vector2 oldVelocity)
         {
-            // Врезалась в стену — гаснет; коснулась пола — продолжает катиться
+            // Упёрлась в невысокий уступ — взбирается; в настоящую стену — гаснет;
+            // коснулась пола — продолжает катиться
             if (Projectile.velocity.X != oldVelocity.X)
-                return true;
+                return !SoAPhysics.TryStepUp(Projectile, oldVelocity, MaxStepUp);
             Projectile.velocity.Y = 0f;
             return false;
         }
