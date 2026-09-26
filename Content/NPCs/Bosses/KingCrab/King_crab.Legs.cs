@@ -217,7 +217,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             // иначе мелкие подскоки/шаг-апы дёргают лапки между «стоит» и «висит»
             bool stateAir = (State == CrabState.JumpCrush && SubState >= 1f)
                          || (State == CrabState.Burrow && SubState >= BurrowSubSink) // с провала лапы уже не на грунте
-                         || (State == CrabState.KnightCourt && SubState >= 2f)
+                         || ((State == CrabState.KnightCourt || State == CrabState.CourtDuel) && SubState >= CourtSubSink)
                          || (State == CrabState.Intro && SubState == IntroSubErupt);
             bool groundedNow = NPC.velocity.Y == 0f || NPC.collideY;
             if (!groundedNow || stateAir)
@@ -426,24 +426,30 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // отрисовкой (та же привязка к bodyCenter, что и у ног), поэтому в покое картинка не меняется.
         private void DrawBody(SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor)
         {
-            Texture2D tex = TextureAssets.Npc[Type].Value;
-            if (tex == null)
+            if (TextureAssets.Npc[Type].Value == null)
                 return;
 
+            BodySpriteTransform(out Vector2 drawCenter, out float rotation, out Vector2 scale);
+            DrawBodySprite(drawCenter, rotation, scale, drawColor, screenPos, DeathWipe());
+        }
+
+        // Где и как рисуется панцирь — общее для отрисовки и для осыпания в песок (Cinematics)
+        private void BodySpriteTransform(out Vector2 drawCenter, out float rotation, out Vector2 scale)
+        {
+            Texture2D tex = TextureAssets.Npc[Type].Value;
             LayerPose bodyPose = AnimPose(LayerBody);
             float sx = 1f + _bodySquash * BodySquashAmount;
             float sy = 1f - _bodySquash * BodySquashAmount;
             // «Дыхание жабр»: период 77 тиков не совпадает ни с одним клипом, амплитуда 0.008 —
             // сознательно незаметно, подсознательно заметно
             float gills = 1f + _breathBody * BreathBodyAmp;
-            Vector2 scale = new Vector2(NPC.scale * sx, NPC.scale * sy) * bodyPose.Scale * gills;
+            scale = new Vector2(NPC.scale * sx, NPC.scale * sy) * bodyPose.Scale * gills;
 
             // Держим «ноги» на месте: при сжатии центр опускаем на убыль полувысоты
             int frameCount = Math.Max(1, Main.npcFrameCount[Type]);
             float halfHeightWorld = tex.Height / frameCount / 2f * NPC.scale;
-            Vector2 drawCenter = AnimatedBodyCenter() + new Vector2(0f, halfHeightWorld * (1f - sy));
-
-            DrawBodySprite(drawCenter, AnimatedBodyRotation(), scale, drawColor, screenPos, DeathWipe());
+            drawCenter = AnimatedBodyCenter() + new Vector2(0f, halfHeightWorld * (1f - sy));
+            rotation = AnimatedBodyRotation();
         }
 
         // Точка, ПРИКЛЕЕННАЯ к панцирю, в мировых координатах — с той же поправкой на squash &

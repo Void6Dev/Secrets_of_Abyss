@@ -167,7 +167,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 string clip = DesiredBaseClip();
                 bool stageChanged = RefreshStageKey();
                 _anim.Play(clip, restart: stageChanged, fade: ClipFade(clip));
-                _anim.Update(ActionTempo); // клип атаки идёт в темпе её Timer'а — удар в кадр удара
+                _anim.Update(BaseClipRate); // клип атаки идёт в темпе её Timer'а — удар в кадр удара; смерть — замедленно
             }
 
             UpdateBreathing();
@@ -365,8 +365,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     // Под песком гребёт, наружу — раскрытием и фазами полёта, приземлился — рёв
                     if (SubState < IntroSubErupt)
                         return "burrow_swim";
-                    if (SubState < IntroSubRoar)
+                    if (SubState < IntroSubStand)
                         return BurrowMaxAir - Timer < BurrowEruptClipTicks ? "burrow_erupt" : AirborneClip();
+                    if (SubState < IntroSubRoar)
+                        return "proud"; // выпрямился во весь рост перед рёвом
                     return "roar";
                 case CrabState.Phase2Transition:
                     return "phase2_transition";
@@ -401,7 +403,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     };
                 case CrabState.KnightCourt:
                 case CrabState.CourtDuel:
-                    return SubState == 0f ? "burrow_dive"
+                    // Присед → нырок → гребёт под землёй → вылет: как подкоп, а не исчезновение
+                    return SubState == 0f ? "jump_crouch"
+                        : SubState < 1f ? "burrow_dive"
                         : SubState < 2f ? "burrow_swim"
                         : KnightCourtEruptElapsed() < BurrowEruptClipTicks ? "burrow_erupt" : AirborneClip();
                 case CrabState.OceanRage:
@@ -563,7 +567,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         {
             if (_eyesGlow <= 0.01f)
                 return;
-            if ((State == CrabState.Burrow && SubState < 2f) || (State == CrabState.KnightCourt && SubState < 2f))
+            if ((State == CrabState.Burrow || State == CrabState.KnightCourt || State == CrabState.CourtDuel) && SubState >= 1f && SubState < 2f)
                 return; // под землёй не видно
 
             LayerPose p = AnimPose(LayerEyes);

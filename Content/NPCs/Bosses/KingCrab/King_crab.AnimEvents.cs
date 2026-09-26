@@ -537,6 +537,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         private void OnCrownFalls()
         {
+            _deathCrownReleased = true; // корона слетает ровно в кадр метки, а не по часам сцены
             HitStop(6);
             ScreenPunch(2f, 20, Vector2.UnitY);
             SoundEngine.PlaySound(SoundID.Tink with { Pitch = -0.5f, Volume = 0.9f }, NPC.Center);

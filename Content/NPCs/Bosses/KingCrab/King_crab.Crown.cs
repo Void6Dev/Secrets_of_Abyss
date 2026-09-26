@@ -20,7 +20,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
     {
         // Наклон и прижатие при «заботе» (CrownCareTilt/Press) — в King_crab.Rig.cs
         private const float CrownFallGravity = 0.35f; // гравитация слетевшей короны
-        // Момент, когда корона слетает в сцене смерти, — DeathCrownFallTick (King_crab.Cinematics.cs)
+        // Момент, когда корона слетает в сцене смерти, — метка crown_falls клипа death
+        private const int DeathCrownFallGrace = 30; // на сколько тиков клип может отстать от часов сцены
 
         // ---------- КОРОНА В СЦЕНАХ ----------
         private const float CrownRollFriction = 0.965f;   // смерть: корона катится к ногам игрока
@@ -82,9 +83,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 BeginCrownReturn(); // король вылетел из песка — корона взлетает к нему на голову
 
             // Смерть — корона слетает НАСОВСЕМ. Уход под землю — временно, потом вернётся.
-            bool dying = State == CrabState.Dying && DeathElapsed >= DeathCrownFallTick;
+            // По метке клипа; часы сцены — страховка, если клип сбит паузами удара
+            bool dying = State == CrabState.Dying
+                && (_deathCrownReleased || DeathElapsed >= DeathCrownFallTick + DeathCrownFallGrace);
             bool underground = (State == CrabState.Burrow && SubState < 2f)
-                            || (State == CrabState.KnightCourt && SubState < 2f);
+                            || (State == CrabState.KnightCourt && SubState < 2f)
+                            || (State == CrabState.CourtDuel && SubState < 2f);
 
             if (_crownMode == CrownMode.Seated && (dying || underground))
                 DropCrown();
@@ -138,8 +142,14 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             _crownPos = new Vector2(StateData, surfaceY + CrownRestOffset + (height - CrownRestOffset) * (1f - rise));
             _crownRot = 0f;
 
+            // Перед выходом корона дрожит: под ней шевелится сам король
+            float tremble = IntroTremble;
+            if (tremble > 0f)
+                _crownPos += new Vector2((float)Math.Sin(Main.GameUpdateCount * 1.9f) * 2.2f,
+                    (float)Math.Sin(Main.GameUpdateCount * 2.7f) * 1.2f) * tremble;
+
             // Корона светится в темноте сама — видно, что она живая, а не клад на дне
-            SoAParticles.AddLight(_crownPos - new Vector2(0f, height * 0.5f), CrownGoldColor, 0.9f + 0.6f * rise, 2);
+            SoAParticles.AddLight(_crownPos - new Vector2(0f, height * 0.5f), CrownGoldColor, 0.9f + 0.6f * rise + 0.8f * tremble, 2);
 
             if (Main.rand.NextBool(4))
             {
@@ -427,7 +437,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             spriteBatch.Draw(tex, top - screenPos, src, light, 0f, origin, NPC.scale, fx, 0f);
             if (_crownGlowTex.Value != null)
             {
-                float glow = 0.55f + 0.3f * (float)Math.Sin(Main.GameUpdateCount * 0.12f);
+                float glow = 0.55f + 0.3f * (float)Math.Sin(Main.GameUpdateCount * 0.12f) + 0.35f * IntroTremble;
                 spriteBatch.Draw(_crownGlowTex.Value, top - screenPos, src, Color.White * glow, 0f, origin, NPC.scale, fx, 0f);
             }
         }

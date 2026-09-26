@@ -69,7 +69,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const int RoarWindupTicks = 45;
         private const int TsunamiWindupTicks = 55;     // хлопок на 47-м тике
         private const int CrownCommandTicks = 70;
-        private const int DyingTicks = 240;            // сцена смерти целиком: взгляд, корона, рассыпание в песок
+        private const int DyingTicks = 400;            // сцена смерти целиком: взгляд, корона, пауза, рассыпание в песок
         private const int Phase2TransitionTicks = 130; // = длина клипа phase2_transition
 
         private const int RecoverTicks = 26;           // общий отход после тяжёлых атак
@@ -135,6 +135,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float BurrowSubTravel = 1f;   // идёт под землёй (скрыт)
         private const float BurrowSubWarn = 1.5f;   // бугор на поверхности (скрыт)
         private const float BurrowSubErupt = 2f;    // вылет наружу
+
+        // «Королевская гвардия» и бой свиты: та же стадия провала между приседом (0) и
+        // ожиданием под землёй (1). Меньше 1 — король ещё на виду и бьётся
+        private const float CourtSubSink = 0.5f;
 
         // ---------- ПОДКОП: ТАЙМИНГИ ----------
         private const int BurrowPrepTicks = 26;        // остановка и присед перед нырком
@@ -250,7 +254,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             {
                 if (BurrowHidden)
                     return true;
-                if (State != CrabState.Burrow || SubState != BurrowSubSink || _burrowSurfaceY <= 0f)
+                bool sinking = (State == CrabState.Burrow && SubState == BurrowSubSink)
+                    || ((State == CrabState.KnightCourt || State == CrabState.CourtDuel) && SubState == CourtSubSink);
+                if (!sinking || _burrowSurfaceY <= 0f)
                     return false;
                 // Порог — ЦЕНТР туши, а не её верх: пока верх дойдёт до кромки, панцирь уже
                 // висит на полкорпуса под землёй, и это ровно та «голова из грунта», которая
@@ -1094,7 +1100,15 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (Timer > 0f)
                 return;
 
-            // Ныряет: с этого мига грунт ему не помеха, но сам он ещё на виду
+            BeginSink();
+            EnterSubState(BurrowSubSink, BurrowSinkTicks);
+        }
+
+        // Нырок: с этого мига грунт ему не помеха, но сам он ещё на виду.
+        // Общий для подкопа, «королевской гвардии» и боя свиты — раньше в двух последних
+        // король просто исчезал на месте, будто телепортировался под землю
+        private void BeginSink()
+        {
             NPC.noTileCollide = true;
             NPC.velocity = new Vector2(0f, BurrowSinkSpeed);
             _burrowSurfaceY = NPC.Bottom.Y; // кромка ямы — по ней сыплется земля, пока проваливается
@@ -1102,11 +1116,22 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SoundEngine.PlaySound(SoundID.Dig with { Pitch = -0.5f }, NPC.Center);
             TriggerBurrowBurst(NPC.Bottom, 170f, 95f, 32f);
             ScreenPunch(2.5f, 12);
-            EnterSubState(BurrowSubSink, BurrowSinkTicks);
         }
 
         // 2. Провал: разгоняется вниз и уходит в толщу грунта, осыпая кромку ямы
         private void BurrowSink()
+        {
+            SinkTick();
+
+            if (Timer > 0f)
+                return;
+
+            FinishSink();
+            EnterSubState(BurrowSubTravel, BurrowTravelMaxTicks);
+        }
+
+        // Тик провала: разгоняется вниз, осыпая кромку ямы
+        private void SinkTick()
         {
             NPC.noTileCollide = true;
 
@@ -1124,14 +1149,11 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 SpawnSandBurst(rim, 160, 10, 2, 2.5f, 2f, 6f, 0.9f, 1.4f, DustID.Stone);
 
             ScreenRumble(BurrowRumbleMin);
-
-            if (Timer > 0f)
-                return;
-
-            // Скрылся целиком: дальше его не рисуют и не бьют
-            TriggerBurrowBurst(new Vector2(NPC.Center.X, _burrowSurfaceY), 150f, 80f, 34f);
-            EnterSubState(BurrowSubTravel, BurrowTravelMaxTicks);
         }
+
+        // Скрылся целиком: дальше его не рисуют и не бьют
+        private void FinishSink()
+            => TriggerBurrowBurst(new Vector2(NPC.Center.X, _burrowSurfaceY), 150f, 80f, 34f);
 
         // 3. Подземный ход: плавно идёт к игроку. Тряска и пыль над крабом — единственное,
         // по чему игрок читает, где он сейчас
@@ -1318,9 +1340,18 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 SpawnSandBurst(NPC.Bottom - new Vector2(80f, 6f), 160, 10, 6, 3f, 2f, 6f);
                 if (Timer <= 0f)
                 {
-                    NPC.noTileCollide = true;
-                    TriggerBurrowBurst(NPC.Bottom, 150f, 90f, 30f);
-                    SoundEngine.PlaySound(SoundID.Dig, NPC.Center);
+                    BeginSink();
+                    EnterSubState(CourtSubSink, BurrowSinkTicks);
+                }
+                return;
+            }
+
+            if (SubState == CourtSubSink) // проваливается сквозь грунт — на виду
+            {
+                SinkTick();
+                if (Timer <= 0f)
+                {
+                    FinishSink();
                     EnterSubState(1f, KnightCourtMaxTicks);
                 }
                 return;
@@ -1460,9 +1491,18 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 SpawnSandBurst(NPC.Bottom - new Vector2(80f, 6f), 160, 10, 6, 3f, 2f, 6f);
                 if (Timer <= 0f)
                 {
-                    NPC.noTileCollide = true;
-                    TriggerBurrowBurst(NPC.Bottom, 150f, 90f, 30f);
-                    SoundEngine.PlaySound(SoundID.Dig, NPC.Center);
+                    BeginSink();
+                    EnterSubState(CourtSubSink, BurrowSinkTicks);
+                }
+                return;
+            }
+
+            if (SubState == CourtSubSink) // проваливается сквозь грунт — на виду
+            {
+                SinkTick();
+                if (Timer <= 0f)
+                {
+                    FinishSink();
                     EnterSubState(1f, CourtDuelMaxTicks);
                 }
                 return;

@@ -77,7 +77,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return true;
             if (State == CrabState.Burrow && SubState >= 2f)
                 return true;
-            if (State == CrabState.KnightCourt && SubState >= 2f)
+            if ((State == CrabState.KnightCourt || State == CrabState.CourtDuel) && SubState >= 2f)
                 return true;
             if (State == CrabState.Intro && SubState == IntroSubErupt)
                 return true;
@@ -301,7 +301,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         {
             if (InOceanRage)
                 return new Color(255, 45, 25);
-            if ((State == CrabState.Burrow || State == CrabState.KnightCourt) && SubState >= 2f
+            if ((State == CrabState.Burrow || State == CrabState.KnightCourt || State == CrabState.CourtDuel) && SubState >= 2f
                 || State == CrabState.Intro && SubState == IntroSubErupt)
                 return new Color(210, 180, 120);
             return new Color(120, 190, 255);

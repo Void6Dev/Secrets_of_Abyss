@@ -37,37 +37,49 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float IntroSubTravel = 0f;  // идёт под песком к игроку
         private const float IntroSubCrown = 1f;   // тишина: из грунта поднимается корона
         private const float IntroSubErupt = 2f;   // выход наружу и полёт
-        private const float IntroSubRoar = 3f;    // приземлился — рёв
+        private const float IntroSubStand = 2.5f; // приземлился, выпрямляется и смотрит на игрока
+        private const float IntroSubRoar = 3f;    // рёв
 
         // ---------- ПОЯВЛЕНИЕ: ПАРАМЕТРЫ ----------
-        private const float IntroStartDistance = 1150f;      // откуда начинается подземный ход
-        private const float IntroStartDistanceShort = 560f;  // на повторных призывах
+        // Первое появление целиком — около 10 секунд: подход ~2.8 с, тишина с короной 2.5 с,
+        // выход, взгляд, рёв. Повторные призывы — короткая версия около 4 секунд
+        private const float IntroStartDistance = 1400f;      // откуда начинается подземный ход
+        private const float IntroStartDistanceShort = 700f;  // на повторных призывах
         private const float IntroStopDistance = 380f;        // выходит ПЕРЕД игроком, а не под ним
-        private const float IntroTravelSpeed = 9f;
-        private const int IntroTravelMaxTicks = 260;         // предохранитель на подземный ход
-        private const int IntroHushTicks = 75;               // тишина, пока встаёт корона
-        private const int IntroHushTicksShort = 24;
-        private const float IntroCrownRiseShare = 0.65f;     // за эту долю тишины корона выходит целиком
-        private const int IntroAfterRoarPause = 40;          // вдох после рёва перед первой атакой
-        private const int TitleCardTicks = 210;
+        private const float IntroTravelSpeed = 6f;           // медленно: бугор должен успеть прочитаться
+        private const int IntroTravelMaxTicks = 340;         // предохранитель на подземный ход
+        private const int IntroHushTicks = 150;              // тишина, пока встаёт корона
+        private const int IntroHushTicksShort = 40;
+        private const float IntroCrownRiseShare = 0.5f;      // за эту долю тишины корона выходит целиком
+        private const float IntroTrembleShare = 0.22f;       // последняя доля тишины: корона дрожит, грунт гудит
+        private const int IntroStandTicks = 40;              // выпрямился после приземления и смотрит
+        private const int IntroStandTicksShort = 12;
+        private const int IntroAfterRoarPause = 70;          // вдох после рёва: успеть прочитать имя
+        private const int TitleCardTicks = 240;
 
         // ---------- СМЕРТЬ ----------
-        private const int DeathClipTicks = 100;       // клип death: взгляд, корона, оседание
-        private const int DeathCrownFallTick = 40;    // = метка crown_falls
-        private const int DeathDissolveStart = 100;   // туша рассыпается в песок сверху вниз
-        private const int DeathDissolveEnd = 176;
-        private const float DeathSpearFormSeconds = 1.3f;
+        // Ровный ритм, ~6.7 с: последний удар → взгляд и корона (клип замедлен) → оседание →
+        // пауза, пока тлеют трещины → медленное рассыпание → копьё из песка → корона гаснет
+        private const int DeathClipTicks = 100;       // клип death в своих тиках: взгляд, корона, оседание
+        private const float DeathClipRate = 0.7f;     // клип смерти играется медленнее боевых: его смакуют
+        private const int DeathCrownFallTick = (int)(40 / DeathClipRate);   // = метка crown_falls в реальных тиках
+        private const int DeathClipEndTick = (int)(DeathClipTicks / DeathClipRate);
+        private const int DeathDissolveStart = DeathClipEndTick + 48; // пауза после оседания: трещины тлеют
+        private const int DeathDissolveEnd = DeathDissolveStart + 140;
+        private const float DeathSpearFormSeconds = 1.6f;
         // Сборка копья кончается на последних тиках сцены — дальше его сменяет настоящая добыча
         private const int DeathSpearFormTick = DyingTicks - (int)(DeathSpearFormSeconds * 60f) - 2;
-        private const int DeathCrownFadeStart = 212;  // корона у ног игрока рассыпается последней
+        private const int DeathCrownFadeStart = DyingTicks - 45; // корона у ног игрока рассыпается последней
         private const int DeathLootShrinkTick = 4;    // Timer, на котором хитбокс сжимается под добычу
         private const int DeathLootBox = 40;
-        private const int DeathCrackCount = 8;
-        private const int DeathCrackGrowTicks = 60;
-        private const int DeathSandPerTick = 7;       // песчинок с линии осыпания за тик
+        private const int DeathCrackCount = 10;
+        private const int DeathCrackStagger = 9;      // трещины разгораются по очереди, а не разом
+        private const int DeathCrackGrowTicks = 80;
+        private const int DeathEmberInterval = 5;     // искры из трещин, пока король ещё цел
+        private const int DeathSandGrainsPerColumn = 12; // одна песчинка на столько столбцов пикселей в строке
+        private const int DeathSandMaxPerTick = 10;
 
         private static readonly Color DeathCrackColor = new(255, 190, 90);
-        private static readonly Color ShellSandColor = new(178, 64, 44);
         private static readonly Color CrownGoldColor = new(255, 205, 110);
 
         private struct DeathCrack
@@ -79,11 +91,21 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         }
 
         private readonly List<DeathCrack> _deathCracks = new();
+
+        // Пиксели панциря на CPU: песок сыплется только там, где у спрайта есть панцирь,
+        // и его же цветом. Общие для всех экземпляров — текстура одна
+        private static Color[] _bodyPixels;
+        private static int _bodyPixelsWidth;
         private bool _deathSceneStarted;
+        private bool _deathCrownReleased; // метка crown_falls пройдена
         private bool _spearFormStarted;
 
         private bool IntroShort => DownedBossSystem.downedKingCrab;
         private int IntroHush => IntroShort ? IntroHushTicksShort : IntroHushTicks;
+
+        // 0 — тишина только началась, 1 — выход; с какого момента корона дрожит
+        private float IntroHushProgress => 1f - Timer / Math.Max(1f, IntroHush);
+        private float IntroTremble => MathHelper.Clamp((IntroHushProgress - (1f - IntroTrembleShare)) / IntroTrembleShare, 0f, 1f);
         private float DeathElapsed => DyingTicks - Timer;
 
         #region Появление: AI
@@ -119,6 +141,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case IntroSubTravel: IntroTravel(target); break;
                 case IntroSubCrown: IntroCrown(); break;
                 case IntroSubErupt: IntroErupt(); break;
+                case IntroSubStand: IntroStand(target); break;
                 default: IntroRoar(target); break;
             }
         }
@@ -163,6 +186,22 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (EveryTicks(5))
                 SpawnSandBurst(new Vector2(StateData - 24f, surfaceY - 6f), 48, 6, 2, 1.2f, 0.5f, 2f);
 
+            // Конец тишины: под короной что-то огромное шевелится — гул возвращается,
+            // грунт вокруг вздрагивает и плюётся песком всё чаще
+            float tremble = IntroTremble;
+            if (tremble > 0f)
+            {
+                if (EveryTicks(6))
+                    ScreenRumble(MathHelper.Lerp(0.8f, BurrowRumbleMax * 0.7f, tremble));
+                if (EveryTicks(Math.Max(2, 9 - (int)(7f * tremble))))
+                {
+                    float x = StateData + Main.rand.NextFloatDirection() * 110f;
+                    SpawnSandBurst(new Vector2(x - 20f, surfaceY - 6f), 40, 6, 4, 2f, 2f, 5f + 4f * tremble);
+                }
+                if (EveryTicks(20))
+                    SoundEngine.PlaySound(SoundID.Item14 with { Volume = 0.25f + 0.35f * tremble, Pitch = -1f }, NPC.Center);
+            }
+
             if (Timer > 0f)
                 return;
 
@@ -183,10 +222,24 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return;
 
             LandFromEruption();
-            EnterSubState(IntroSubRoar, RoarWindupTicks);
+            EnterSubState(IntroSubStand, IntroShort ? IntroStandTicksShort : IntroStandTicks);
         }
 
-        // 4. Рёв (клип roar: вдох, пик) и выпуск — с именем на экране при первой встрече
+        // 4. Пауза: выпрямился, стряхивает песок и смотрит на того, кто его позвал
+        private void IntroStand(Player target)
+        {
+            ApplyGravity();
+            Brake();
+            FaceTarget(target);
+
+            if (EveryTicks(7))
+                SpawnSandBurst(NPC.Center - new Vector2(90f, 60f), 180, 60, 3, 1f, -1.5f, 0.5f); // песок осыпается с панциря
+
+            if (Timer <= 0f)
+                EnterSubState(IntroSubRoar, RoarWindupTicks);
+        }
+
+        // 5. Рёв (клип roar: вдох, пик) и выпуск — с именем на экране при первой встрече
         private void IntroRoar(Player target)
         {
             ApplyGravity();
@@ -224,13 +277,18 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             NPC.Center = center;
         }
 
-        // Доля рассыпания туши: 0 — цела, 1 — осыпалась целиком
+        // Доля рассыпания туши: 0 — цела, 1 — осыпалась целиком. Медленно трогается,
+        // разгоняется и медленно доходит до ног — без рывка на старте и обрыва в конце
         private float DeathWipe()
         {
             if (State != CrabState.Dying)
                 return 0f;
-            return MathHelper.Clamp((DeathElapsed - DeathDissolveStart) / (float)(DeathDissolveEnd - DeathDissolveStart), 0f, 1f);
+            float t = MathHelper.Clamp((DeathElapsed - DeathDissolveStart) / (float)(DeathDissolveEnd - DeathDissolveStart), 0f, 1f);
+            return t * t * (3f - 2f * t);
         }
+
+        // Скорость, с которой играет базовый клип: темп атаки, а в смерти — замедленно
+        private float BaseClipRate => State == CrabState.Dying ? DeathClipRate : ActionTempo;
 
         // Прозрачность ног и клешней: гаснут чуть быстрее, чем осыпается панцирь
         private float DeathPartOpacity() => 1f - MathHelper.Clamp(DeathWipe() * 1.4f, 0f, 1f);
@@ -243,6 +301,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             {
                 _deathSceneStarted = false;
                 _spearFormStarted = false;
+                _deathCrownReleased = false;
                 return;
             }
 
@@ -255,6 +314,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             float wipe = DeathWipe();
             if (wipe > 0f && wipe < 1f)
                 PourSandFromWipe(wipe);
+            else if (wipe <= 0f && DeathElapsed > 20f && EveryTicks(DeathEmberInterval))
+                SpawnCrackEmber();
 
             if (!_spearFormStarted && DeathElapsed >= DeathSpearFormTick)
             {
@@ -286,38 +347,96 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     Local = new Vector2(Main.rand.NextFloat(-95f, 95f), Main.rand.NextFloat(-45f, 30f)),
                     Angle = Main.rand.NextFloat(MathHelper.TwoPi),
                     Length = Main.rand.NextFloat(28f, 70f),
-                    Delay = i * 6,
+                    Delay = i * DeathCrackStagger,
                 });
             }
         }
 
-        // Песок сыплется с линии, которая ползёт по панцирю сверху вниз
+        // Песок сыплется с линии, которая ползёт по панцирю сверху вниз. Песчинки берутся из
+        // РЕАЛЬНЫХ пикселей панциря в этой строке спрайта: сыплется только там, где панцирь есть,
+        // его же цветом и с плотностью по ширине строки. Раньше песок сыпался равномерной
+        // полосой на всю ширину — у купола панциря он висел в воздухе по бокам
         private void PourSandFromWipe(float wipe)
         {
-            Texture2D tex = TextureAssets.Npc[Type].Value;
-            if (tex == null)
+            if (!EnsureBodyPixels())
                 return;
 
-            float halfW = tex.Width / 2f * NPC.scale;
-            float halfH = tex.Height / Math.Max(1, Main.npcFrameCount[Type]) / 2f * NPC.scale;
-            Vector2 center = AnimatedBodyCenter();
-            float lineY = center.Y - halfH + wipe * halfH * 2f;
+            Texture2D tex = TextureAssets.Npc[Type].Value;
+            int frameHeight = tex.Height / Math.Max(1, Main.npcFrameCount[Type]);
+            int row = Math.Clamp((int)(frameHeight * wipe), 0, frameHeight - 1);
+            int rowStart = (NPC.frame.Y + row) * _bodyPixelsWidth;
 
-            for (int i = 0; i < DeathSandPerTick; i++)
+            Span<short> solid = stackalloc short[_bodyPixelsWidth];
+            int solidCount = 0;
+            for (int x = 0; x < _bodyPixelsWidth; x++)
             {
-                Vector2 at = new Vector2(center.X + Main.rand.NextFloat(-halfW, halfW) * 0.8f, lineY);
-                Color color = Color.Lerp(ShellSandColor, SoAVfx.TideSand, Main.rand.NextFloat(0.3f, 1f));
-                SoAParticles.SpawnDebris(at, new Vector2(Main.rand.NextFloatDirection() * 1.5f, Main.rand.NextFloat(-1f, 0.6f)),
-                    color, Main.rand.NextFloat(2f, 4.5f), Main.rand.Next(110, 150)); // полежат на грунте осыпью
+                if (_bodyPixels[rowStart + x].A > 32)
+                    solid[solidCount++] = (short)x;
+            }
+            if (solidCount == 0)
+                return;
+
+            BodySpriteTransform(out Vector2 center, out float rotation, out Vector2 scale);
+            bool flipped = NPC.spriteDirection == 1; // так же, как в DrawBodySprite
+            int grains = Math.Clamp(solidCount / DeathSandGrainsPerColumn, 1, DeathSandMaxPerTick);
+
+            for (int i = 0; i < grains; i++)
+            {
+                int column = solid[Main.rand.Next(solidCount)];
+                float localX = column + 0.5f - _bodyPixelsWidth / 2f;
+                if (flipped)
+                    localX = -localX;
+                Vector2 local = new Vector2(localX * scale.X, (row - frameHeight / 2f) * scale.Y);
+                Vector2 at = center + local.RotatedBy(rotation);
+
+                // Цвет пикселя панциря, чуть присыпанный песком — это сам панцирь осыпается
+                Color shell = _bodyPixels[rowStart + column];
+                Color color = Color.Lerp(shell, SoAVfx.TideSand, Main.rand.NextFloat(0.1f, 0.45f));
+                color.A = 255;
+                bool chunk = Main.rand.NextBool(6); // изредка откалывается кусок покрупнее
+                SoAParticles.SpawnDebris(at, new Vector2(Main.rand.NextFloatDirection() * (chunk ? 2.2f : 1.2f),
+                        Main.rand.NextFloat(-1.2f, 0.4f)), color,
+                    chunk ? Main.rand.NextFloat(4.5f, 7f) : Main.rand.NextFloat(2f, 4f), Main.rand.Next(120, 170));
             }
 
-            if (EveryTicks(3))
+            if (EveryTicks(4))
             {
-                SoAParticles.SpawnSmoke(new Vector2(center.X + Main.rand.NextFloat(-halfW, halfW) * 0.6f, lineY),
-                    new Vector2(Main.rand.NextFloatDirection() * 0.6f, -0.3f), SoAVfx.TideSand, 40f, 110f, 0.35f, 60);
+                int column = solid[Main.rand.Next(solidCount)];
+                float localX = (column - _bodyPixelsWidth / 2f) * (flipped ? -1f : 1f);
+                Vector2 at = center + new Vector2(localX * scale.X, (row - frameHeight / 2f) * scale.Y).RotatedBy(rotation);
+                SoAParticles.SpawnSmoke(at, new Vector2(Main.rand.NextFloatDirection() * 0.5f, -0.25f),
+                    SoAVfx.TideSand, 40f, 110f, 0.3f, 70);
             }
-            if (EveryTicks(9))
-                SoundEngine.PlaySound(SoundID.Item13 with { Pitch = -0.6f, Volume = 0.35f }, NPC.Center);
+            if (EveryTicks(10))
+                SoundEngine.PlaySound(SoundID.Item13 with { Pitch = -0.6f, Volume = 0.3f }, NPC.Center);
+        }
+
+        // Пока король ещё цел, из трещин срываются тлеющие искры — пауза после оседания не пустая
+        private void SpawnCrackEmber()
+        {
+            if (_deathCracks.Count == 0)
+                return;
+            DeathCrack crack = _deathCracks[Main.rand.Next(_deathCracks.Count)];
+            if (DeathElapsed - crack.Delay < DeathCrackGrowTicks * 0.5f)
+                return;
+
+            Vector2 at = BodyAnchorToWorld(crack.Local);
+            SoAParticles.SpawnStreak(at, new Vector2(Main.rand.NextFloatDirection() * 0.8f, -Main.rand.NextFloat(1.5f, 3.2f)),
+                DeathCrackColor, 2.2f, gravity: -0.02f, life: Main.rand.Next(24, 40), lengthPerSpeed: 2f);
+            SoAParticles.AddLight(at, DeathCrackColor, 0.6f, 6);
+        }
+
+        private bool EnsureBodyPixels()
+        {
+            if (_bodyPixels != null)
+                return true;
+            Texture2D tex = TextureAssets.Npc[Type].Value;
+            if (tex == null)
+                return false;
+            _bodyPixels = new Color[tex.Width * tex.Height];
+            tex.GetData(_bodyPixels);
+            _bodyPixelsWidth = tex.Width;
+            return true;
         }
 
         // Рисовать внутри BeginAdditive: трещины светятся изнутри панциря
