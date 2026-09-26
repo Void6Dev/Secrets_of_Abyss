@@ -1,230 +1,238 @@
+using System;
+using Microsoft.Xna.Framework;
 using Terraria;
+using Terraria.Audio;
+using Terraria.DataStructures;
 using Terraria.ID;
 using Terraria.ModLoader;
-using Microsoft.Xna.Framework;
+using SoA.Common.Graphics.Particles;
 using SoA.Content.Items.Materials;
-using SoA.Content.Buffs;
-using Terraria.Audio;
-using System;
+using SoA.Content.Projectiles;
 
 namespace SoA.Content.Items.Weapons
 {
+    // Когти Лавовой Тени: быстрые когтистые рывки к курсору, попеременно правой и левой
+    // рукой (LavaClawSlash); каждый четвёртый удар — тяжёлый. Попадания копят урон в лавовой
+    // метке, и она взрывается, когда удары прекращаются. ПКМ — огненный рывок с неуязвимостью.
     public class ClawsOfLavaShadow : ModItem
     {
-        private int dashCooldown = 120;
-        private int dashCooldownCounter = 0;
+        private const int DashCooldownTicks = 120;
+        private const float HeavyDamageMultiplier = 1.4f;
+        private const float HeavyKnockbackMultiplier = 2f;
+
+        private int _dashCooldown;
         private bool _dashReady = true;
 
-        public override void SetDefaults() {
+        public override void SetDefaults()
+        {
             // Урон ниже, чем у обычного оружия этапа: метка копит его и взрывается вторым разом
             Item.damage = 24;
             Item.DamageType = DamageClass.Melee;
             Item.width = 30;
-            Item.scale = 2;
             Item.height = 20;
-            Item.useTime = 12;
-            Item.useAnimation = 12;
-            Item.useStyle = ItemUseStyleID.Swing;
+            Item.useTime = 13;
+            Item.useAnimation = 13;
+            Item.useStyle = ItemUseStyleID.Shoot;
             Item.knockBack = 2;
             Item.value = Item.sellPrice(gold: 3);
             Item.rare = ItemRarityID.Orange; // этап адского камня, а не финал игры
-            Item.UseSound = SoundID.Item1;
             Item.autoReuse = true;
+            Item.noMelee = true;       // режет снаряд взмаха
+            Item.noUseGraphic = true;  // коготь в руке рисует LavaClawSlash
+            Item.shoot = ModContent.ProjectileType<LavaClawSlash>();
+            Item.shootSpeed = 1f;      // нужна только сторона прицела
         }
 
-        public override void AddRecipes() {
-            Recipe recipe = CreateRecipe();
-            // Раньше здесь дважды стояли осколки (опечатка) и крафт шёл у простой печи
-            recipe.AddIngredient(ModContent.ItemType<LavaShard>(), 12);
-            recipe.AddIngredient(ItemID.HellstoneBar, 10);
-            recipe.AddTile(TileID.Hellforge);
-            recipe.Register();
-        }
-
-        public override void ModifyHitNPC(Player player, NPC target, ref NPC.HitModifiers modifiers) {
-            target.AddBuff(ModContent.BuffType<LavaExplosionDebuff>(), 30);
-            LavaExplosionGlobalNPC modNPC = target.GetGlobalNPC<LavaExplosionGlobalNPC>();
-            modNPC.cumulativeDamage += Item.damage;
-        }
-
-        public override void MeleeEffects(Player player, Rectangle hitbox) {
-            // Dense lava sparks along the swing arc
-            for (int i = 0; i < 2; i++)
-            {
-                Dust spark = Dust.NewDustDirect(new Vector2(hitbox.X, hitbox.Y), hitbox.Width, hitbox.Height,
-                    DustID.SolarFlare, Main.rand.NextFloat(-4f, 4f), Main.rand.NextFloat(-4f, 4f));
-                spark.scale = Main.rand.NextFloat(1f, 2f);
-                spark.noGravity = true;
-            }
-            if (Main.rand.NextBool(3))
-            {
-                Dust ember = Dust.NewDustDirect(new Vector2(hitbox.X, hitbox.Y), hitbox.Width, hitbox.Height,
-                    DustID.InfernoFork, Main.rand.NextFloat(-3f, 3f), Main.rand.NextFloat(-3f, 3f));
-                ember.scale = Main.rand.NextFloat(0.8f, 1.5f);
-                ember.noGravity = false;
-            }
-            Lighting.AddLight(new Vector2(hitbox.Center.X, hitbox.Center.Y), 0.9f, 0.35f, 0f);
-        }
-        
-        
-
-        public override bool AltFunctionUse(Player player) {
-            return true;
-        }
-
-        public override bool CanUseItem(Player player)
+        public override void AddRecipes()
         {
-            if (player.altFunctionUse == 2)
-            {
-                Item.noUseGraphic = true;
-                Item.noMelee = true;
-                return _dashReady;
-            }
-
-            Item.noUseGraphic = false;
-            Item.noMelee = false;
-            return true;
+            // Раньше здесь дважды стояли осколки (опечатка) и крафт шёл у простой печи
+            CreateRecipe()
+                .AddIngredient(ModContent.ItemType<LavaShard>(), 12)
+                .AddIngredient(ItemID.HellstoneBar, 10)
+                .AddTile(TileID.Hellforge)
+                .Register();
         }
+
+        public override bool AltFunctionUse(Player player) => true;
+
+        public override bool CanUseItem(Player player) => player.altFunctionUse != 2 || _dashReady;
 
         public override bool? UseItem(Player player)
         {
             if (player.altFunctionUse == 2 && _dashReady)
             {
-                DashTowardsCursor(player);
+                _dashReady = false;
+                _dashCooldown = DashCooldownTicks;
+                // Направление берётся от курсора — оно есть только у самого игрока
+                if (player.whoAmI == Main.myPlayer)
+                    player.GetModPlayer<LavaClawsPlayer>().StartDash();
                 return true;
             }
-            return base.UseItem(player);
+            return null;
         }
 
-        private void DashTowardsCursor(Player player)
+        public override bool Shoot(Player player, EntitySource_ItemUse_WithAmmo source, Vector2 position,
+            Vector2 velocity, int type, int damage, float knockback)
         {
-            _dashReady = false;
-            dashCooldownCounter = dashCooldown;
-            LavaDashPlayer modPlayer = player.GetModPlayer<LavaDashPlayer>();
-            modPlayer.StartDash();
-            Vector2 dashDirection = Vector2.Normalize(Main.MouseWorld - player.Center);
-            player.velocity = dashDirection * 15f;
+            if (player.altFunctionUse == 2)
+                return false; // ПКМ — рывок, взмаха нет
+
+            LavaClawsPlayer claws = player.GetModPlayer<LavaClawsPlayer>();
+            claws.NextSlash(out float side, out bool heavy);
+            if (heavy)
+            {
+                damage = (int)(damage * HeavyDamageMultiplier);
+                knockback *= HeavyKnockbackMultiplier;
+            }
+
+            Projectile.NewProjectile(source, player.MountedCenter, Vector2.Zero, type, damage, knockback,
+                player.whoAmI, side, heavy ? 1f : 0f, velocity.ToRotation());
+            return false;
         }
 
         public override void UpdateInventory(Player player)
         {
-            if (dashCooldownCounter > 0)
-                dashCooldownCounter--;
+            if (_dashCooldown > 0)
+                _dashCooldown--;
 
-            if (!_dashReady && dashCooldownCounter == 0 && player.velocity.Y == 0)
+            // Рывок перезаряжается только на земле: иначе цепочка рывков заменяет крылья
+            if (!_dashReady && _dashCooldown == 0 && player.velocity.Y == 0f)
             {
                 _dashReady = true;
                 OnDashReady(player);
-            }
-
-            if (player.altFunctionUse != 2)
-            {
-                Item.noUseGraphic = false;
-                Item.noMelee = false;
             }
         }
 
         public override void HoldItem(Player player)
         {
-            player.ChangeDir(MathF.Sign(player.velocity.X != 0 ? player.velocity.X : player.direction));
+            // Вне взмаха смотрим туда, куда бежим; во взмахе направление ведёт LavaClawSlash
+            if (player.heldProj < 0 || Main.projectile[player.heldProj].type != Item.shoot)
+                player.ChangeDir(Math.Sign(player.velocity.X != 0f ? player.velocity.X : player.direction));
         }
 
-    
-        private void OnDashReady(Player player)
+        // Рывок снова готов: короткая вспышка на игроке и звон
+        private static void OnDashReady(Player player)
         {
-            // ✨ вспышка
-            for (int i = 0; i < 20; i++)
+            if (!Main.dedServ && player.whoAmI == Main.myPlayer)
             {
-                Dust dust = Dust.NewDustDirect(player.position, player.width, player.height,
-                    DustID.InfernoFork,
-                    Main.rand.NextFloat(-4f, 4f),
-                    Main.rand.NextFloat(-4f, 4f));
-
-                dust.noGravity = true;
-                dust.scale = 1.5f;
+                SoAParticles.SpawnGlow(player.Center, Vector2.Zero, new Color(255, 140, 40) * 0.7f, 20f, 90f, 14);
+                for (int i = 0; i < 12; i++)
+                {
+                    Vector2 dir = Main.rand.NextVector2Unit();
+                    SoAParticles.SpawnStreak(player.Center + dir * 12f, dir * Main.rand.NextFloat(2f, 5f),
+                        new Color(255, 170, 60), 2f, gravity: 0f, life: 16, lengthPerSpeed: 2f);
+                }
+                SoundEngine.PlaySound(SoundID.Item29 with { Volume = 0.6f }, player.Center);
             }
-
-            // 💡 свет
-            Lighting.AddLight(player.Center, 1f, 0.4f, 0f);
-
-            // 🔊 звук
-            SoundEngine.PlaySound(SoundID.Item29, player.Center);
-
-            // ⚡ короткий "флэш"
-            player.immune = false;
-            player.immuneTime = 5;
         }
     }
-    public class LavaDashPlayer : ModPlayer
+
+    // Состояние Когтей на игроке: очередь взмахов (правая/левая, каждый 4-й тяжёлый) и рывок
+    public class LavaClawsPlayer : ModPlayer
     {
+        private const int ComboResetTicks = 40;   // пауза, после которой серия начинается заново
+        private const int HeavyEvery = 4;
+        private const int DashDuration = 25;
+        private const float DashSpeed = 20f;
+
+        private static readonly Color DashFire = new(255, 130, 35);
+        private static readonly Color DashCore = new(255, 230, 170);
+        private static readonly Color DashSmoke = new(60, 42, 36);
+
+        private float _slashSide = -1f;
+        private int _slashCount;
+        private ulong _lastSlashTick;
+
         public bool isDashing;
-        private int dashDuration = 25;
-        private Vector2 dashVelocity;
-        private int dashFrameCounter;
+        private int _dashTicks;
+        private Vector2 _dashVelocity;
+
+        public void NextSlash(out float side, out bool heavy)
+        {
+            if (Main.GameUpdateCount - _lastSlashTick > ComboResetTicks)
+                _slashCount = 0;
+            _lastSlashTick = Main.GameUpdateCount;
+
+            _slashCount++;
+            _slashSide = -_slashSide;
+            side = _slashSide;
+            heavy = _slashCount % HeavyEvery == 0;
+        }
+
+        public void StartDash()
+        {
+            isDashing = true;
+            _dashTicks = 0;
+            _dashVelocity = (Main.MouseWorld - Player.Center).SafeNormalize(Vector2.UnitX * Player.direction) * DashSpeed;
+            Player.velocity = _dashVelocity;
+
+            SoundEngine.PlaySound(SoundID.Item74, Player.Center);
+            if (Main.dedServ)
+                return;
+
+            // Воспламенение: кольцо раскалённых брызг и вспышка
+            for (int i = 0; i < 22; i++)
+            {
+                Vector2 dir = Main.rand.NextVector2Unit();
+                SoAParticles.SpawnStreak(Player.Center + dir * 8f, dir * Main.rand.NextFloat(4f, 10f),
+                    Color.Lerp(DashFire, DashCore, Main.rand.NextFloat(0.5f)), Main.rand.NextFloat(2f, 3.5f),
+                    gravity: 0.05f, life: Main.rand.Next(16, 28), lengthPerSpeed: 2.4f);
+            }
+            SoAParticles.SpawnGlow(Player.Center, Vector2.Zero, DashCore, 40f, 150f, 12);
+            SoAParticles.AddLight(Player.Center, DashFire, 2f, 14);
+        }
 
         public override void PostUpdate()
         {
             if (!isDashing)
                 return;
 
-            dashFrameCounter++;
-            if (dashFrameCounter <= dashDuration)
+            _dashTicks++;
+            if (_dashTicks <= DashDuration)
             {
-                // Dense lava trail — 3 particles per frame
-                for (int i = 0; i < 3; i++)
-                {
-                    Dust trail = Dust.NewDustDirect(Player.position, Player.width, Player.height,
-                        DustID.SolarFlare,
-                        -dashVelocity.X * Main.rand.NextFloat(0.1f, 0.35f),
-                        -dashVelocity.Y * Main.rand.NextFloat(0.1f, 0.35f));
-                    trail.scale = Main.rand.NextFloat(1.2f, 2.2f);
-                    trail.noGravity = true;
-                }
-                // Smoke wisps
-                if (Main.rand.NextBool(3))
-                {
-                    Dust smoke = Dust.NewDustDirect(Player.position, Player.width, Player.height,
-                        DustID.Smoke, -dashVelocity.X * 0.15f, -dashVelocity.Y * 0.15f, 120, default, 1.1f);
-                    smoke.noGravity = false;
-                }
-
-                Lighting.AddLight(Player.Center, 1f, 0.4f, 0f);
                 Player.immune = true;
                 Player.immuneTime = 15;
+                if (!Main.dedServ)
+                    SpawnDashTrail();
+                return;
             }
-            else
-            {
-                // End-of-dash burst
-                for (int i = 0; i < 22; i++)
-                {
-                    Dust burst = Dust.NewDustDirect(Player.position, Player.width, Player.height,
-                        DustID.SolarFlare, Main.rand.NextFloat(-6f, 6f), Main.rand.NextFloat(-6f, 6f));
-                    burst.scale = Main.rand.NextFloat(1.3f, 2.4f);
-                    burst.noGravity = true;
-                }
 
-                isDashing = false;
-                dashFrameCounter = 0;
-                Player.immune = false;
-            }
+            isDashing = false;
+            _dashTicks = 0;
+            Player.immune = false;
+            if (!Main.dedServ)
+                SpawnDashEnd();
         }
 
-        public void StartDash()
+        // Огненный след: языки пламени срываются назад, за ними тянется дым
+        private void SpawnDashTrail()
         {
-            isDashing = true;
-            dashFrameCounter = 0;
-            dashVelocity = Vector2.Normalize(Main.MouseWorld - Player.Center) * 20f;
-            Player.velocity = dashVelocity;
-
-            // Ignition burst at dash start
-            for (int i = 0; i < 28; i++)
+            Vector2 back = -_dashVelocity.SafeNormalize(Vector2.Zero);
+            for (int i = 0; i < 3; i++)
             {
-                Dust ignite = Dust.NewDustDirect(Player.position, Player.width, Player.height,
-                    DustID.InfernoFork, Main.rand.NextFloat(-7f, 7f), Main.rand.NextFloat(-7f, 7f));
-                ignite.scale = Main.rand.NextFloat(1.5f, 2.8f);
-                ignite.noGravity = true;
+                Vector2 at = Player.Center + Main.rand.NextVector2Circular(Player.width * 0.5f, Player.height * 0.5f);
+                SoAParticles.SpawnStreak(at, back.RotatedByRandom(0.5f) * Main.rand.NextFloat(3f, 7f),
+                    Color.Lerp(DashFire, DashCore, Main.rand.NextFloat(0.4f)), Main.rand.NextFloat(2.5f, 4f),
+                    gravity: -0.04f, life: Main.rand.Next(14, 24), lengthPerSpeed: 2.2f);
             }
-            SoundEngine.PlaySound(SoundID.Item74, Player.Center);
+            if (_dashTicks % 3 == 0)
+            {
+                SoAParticles.SpawnSmoke(Player.Center, back * 1.5f + new Vector2(0f, -0.4f), DashSmoke,
+                    30f, 90f, 0.4f, Main.rand.Next(40, 60));
+            }
+            SoAParticles.SpawnGlow(Player.Center, Vector2.Zero, DashFire * 0.35f, 50f, 70f, 6);
+            Lighting.AddLight(Player.Center, DashFire.ToVector3());
+        }
+
+        private void SpawnDashEnd()
+        {
+            for (int i = 0; i < 18; i++)
+            {
+                Vector2 dir = Main.rand.NextVector2Unit();
+                SoAParticles.SpawnStreak(Player.Center, dir * Main.rand.NextFloat(3f, 8f), DashFire,
+                    Main.rand.NextFloat(2f, 3f), gravity: 0.12f, life: Main.rand.Next(14, 24), lengthPerSpeed: 2.2f);
+            }
+            SoAParticles.SpawnSmoke(Player.Center, new Vector2(0f, -0.6f), DashSmoke, 40f, 120f, 0.45f, 60);
         }
     }
 }

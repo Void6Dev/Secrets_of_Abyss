@@ -125,8 +125,9 @@ Mods: {
 				DisplayName: Lava claw
 				Tooltip:
 					'''
-					Mark an enemy that accumulates damage with each hit, and explodes if you stop dealing damage
-					Right click for small dash with immunity frames(Cooldown 2 sec)
+					Rakes toward the cursor with alternating claws, every fourth strike is a heavy one
+					Hits brand the enemy: the brand stores the damage and erupts once you stop attacking
+					Right click to dash through fire with brief invulnerability (2 second cooldown)
 					Ouch, too hot
 					'''
 			}
