@@ -1,3 +1,4 @@
+using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -16,12 +17,15 @@ namespace SoA.Content.Items.Fishing
         // Насколько удочка сильнее именно в Приливе Теней
         public const float BiomeFishingBonus = 8f;
 
-        public override string Texture => "Terraria/Images/Item_" + ItemID.FisherofSouls;
+        // Леска светится тем же лиловым, что и Тёмный люминофор, из которого собрана удочка
+        private static readonly Color LineColor = new(170, 110, 255);
 
         public override void SetDefaults()
         {
-            Item.width = 24;
-            Item.height = 28;
+            // Спрайт 44x44 по диагонали, кончик в правом верхнем углу — там, где ванильная
+            // удочка выпускает леску, поэтому точку выхода лески не переопределяем
+            Item.width = 44;
+            Item.height = 44;
             Item.useStyle = ItemUseStyleID.Swing;
             Item.useAnimation = 12;
             Item.useTime = 12;
@@ -43,5 +47,8 @@ namespace SoA.Content.Items.Fishing
                 .AddTile(TileID.Anvils)
                 .Register();
         }
+
+        public override void ModifyFishingLine(Projectile bobber, ref Vector2 lineOriginOffset, ref Color lineColor)
+            => lineColor = LineColor;
     }
 }

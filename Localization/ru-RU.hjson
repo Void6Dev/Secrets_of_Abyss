@@ -213,6 +213,15 @@ Mods: {
 				// Tooltip: A claw fit for a king. Surely someone can forge something out of this.
 			}
 
+			Toothbreaker: {
+				DisplayName: Зубодробилка
+				Tooltip:
+					'''
+					Кирка и молот из клыков ихтиофагов
+					Под водой копает быстрее
+					'''
+			}
+
 			KingCrabBag: {
 				DisplayName: Мешок с сокровищами (Король-краб)
 				Tooltip: "{$CommonItemTooltip.RightClickToOpen}"

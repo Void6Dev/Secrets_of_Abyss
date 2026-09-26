@@ -16,6 +16,7 @@ Mods: {
 					'''
 					A water-driven chainsaw of the forgotten tides
 					Deals 25% more damage to enemies soaked in liquid
+					Cuts faster underwater
 					'''
 			}
 
@@ -168,7 +169,11 @@ Mods: {
 
 			ShardedSpear: {
 				DisplayName: Spear of Waves
-				Tooltip: Fire laser beam
+				Tooltip:
+					'''
+					Hold to channel a piercing beam of the abyssal tide
+					The crown's spear, reforged by the deep
+					'''
 			}
 
 			ScytheOfFireStorm: {
@@ -211,6 +216,15 @@ Mods: {
 			RoyalClaw: {
 				DisplayName: Royal Claw
 				Tooltip: A claw fit for a king. Surely someone can forge something out of this.
+			}
+
+			Toothbreaker: {
+				DisplayName: Toothbreaker
+				Tooltip:
+					'''
+					Pickaxe and hammer forged from ichthyophage fangs
+					Digs faster underwater
+					'''
 			}
 
 			KingCrabBag: {

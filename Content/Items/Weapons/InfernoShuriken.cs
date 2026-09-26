@@ -16,7 +16,9 @@ namespace SoA.Content.Items.Weapons
     {
         public override void SetDefaults()
         {
-            Item.damage = 75;
+            // Идеальный бросок удваивает урон, сюрикен пробивает насквозь и взрывается:
+            // база ниже, чем у оружия этапа адского камня
+            Item.damage = 36;
             Item.DamageType = DamageClass.Ranged;
             Item.width = 30;
             Item.height = 30;
@@ -26,8 +28,8 @@ namespace SoA.Content.Items.Weapons
             Item.noMelee = true;
             Item.noUseGraphic = true;
             Item.knockBack = 3;
-            Item.value = Item.sellPrice(gold: 6);
-            Item.rare = ItemRarityID.Green;
+            Item.value = Item.sellPrice(gold: 3);
+            Item.rare = ItemRarityID.Orange;
             Item.UseSound = SoundID.Item1;
             Item.autoReuse = false;
             Item.shoot = ModContent.ProjectileType<InfernoShurikenProjectile>();

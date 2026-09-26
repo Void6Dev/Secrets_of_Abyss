@@ -16,7 +16,8 @@ namespace SoA.Content.Items.Weapons
         private bool _dashReady = true;
 
         public override void SetDefaults() {
-            Item.damage = 45;
+            // Урон ниже, чем у обычного оружия этапа: метка копит его и взрывается вторым разом
+            Item.damage = 24;
             Item.DamageType = DamageClass.Melee;
             Item.width = 30;
             Item.scale = 2;
@@ -25,17 +26,18 @@ namespace SoA.Content.Items.Weapons
             Item.useAnimation = 12;
             Item.useStyle = ItemUseStyleID.Swing;
             Item.knockBack = 2;
-            Item.value = Item.sellPrice(gold: 10);
-            Item.rare = ItemRarityID.Purple;
+            Item.value = Item.sellPrice(gold: 3);
+            Item.rare = ItemRarityID.Orange; // этап адского камня, а не финал игры
             Item.UseSound = SoundID.Item1;
             Item.autoReuse = true;
         }
 
         public override void AddRecipes() {
             Recipe recipe = CreateRecipe();
-            recipe.AddIngredient(ModContent.ItemType<LavaShard>(), 10);
-            recipe.AddIngredient(ModContent.ItemType<LavaShard>(), 10);
-            recipe.AddTile(TileID.Furnaces);
+            // Раньше здесь дважды стояли осколки (опечатка) и крафт шёл у простой печи
+            recipe.AddIngredient(ModContent.ItemType<LavaShard>(), 12);
+            recipe.AddIngredient(ItemID.HellstoneBar, 10);
+            recipe.AddTile(TileID.Hellforge);
             recipe.Register();
         }
 

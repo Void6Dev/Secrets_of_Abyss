@@ -4,6 +4,7 @@ using Terraria.ModLoader;
 using Terraria.DataStructures;
 using SoA.Content.Projectiles;
 using SoA.Common.CustomClasses;
+using SoA.Content.Items.Materials;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria.GameContent;
@@ -38,6 +39,19 @@ namespace SoA.Content.Items.Weapons
             Item.shootSpeed = 1f;
             Item.value = Item.sellPrice(gold: 20);
             Item.rare = ItemRarityID.Red;
+        }
+
+        // Финальное оружие: вершина линии копий (Королевское копьё → Копьё волн),
+        // крафт после Лунного лорда у Древнего манипулятора
+        public override void AddRecipes()
+        {
+            CreateRecipe()
+                .AddIngredient(ModContent.ItemType<RoyalSpear>())
+                .AddIngredient(ItemID.LunarBar, 12)
+                .AddIngredient(ItemID.FragmentNebula, 18)
+                .AddIngredient(ModContent.ItemType<DarkLumen>(), 20)
+                .AddTile(TileID.LunarCraftingStation)
+                .Register();
         }
 
         public override bool CanUseItem(Player player)
