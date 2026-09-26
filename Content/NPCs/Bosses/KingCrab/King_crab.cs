@@ -12,6 +12,7 @@ using Terraria.ModLoader;
 using SoA.Common.Graphics;
 using SoA.Common.Systems;
 using SoA.Common.Utils;
+using SoA.Content.Items.BossBags;
 using SoA.Content.Items.Materials;
 using SoA.Content.Items.Weapons;
 using SoA.Content.Projectiles;
@@ -100,6 +101,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float RoarPushSpeed = 9f;
 
         private const int KnightsPerCall = 2;
+
+        // Сколько королевских клешней падает — одно число и для Classic, и для мешка
+        internal const int RoyalClawDropMin = 8;
+        internal const int RoyalClawDropMax = 16;
 
         // Набор атак по фазам: фаза 1 — медленные тяжёлые удары, фаза 2 добавляет к ним своё (реф)
         private static readonly CrabState[] Phase1Attacks =
@@ -331,8 +336,15 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         public override void ModifyNPCLoot(NPCLoot npcLoot)
         {
+            // Копьё — во всех режимах и вне мешка: в сцене смерти оно собирается из песка
+            // ровно там, где выпадает (King_crab.Cinematics.cs)
             npcLoot.Add(ItemDropRule.Common(ModContent.ItemType<RoyalSpear>()));
-            npcLoot.Add(ItemDropRule.Common(ModContent.ItemType<RoyalClaw>(), 1, 8, 16));
+
+            // Expert и Master — мешок, каждому игроку свой; Classic — клешни напрямую
+            npcLoot.Add(ItemDropRule.BossBag(ModContent.ItemType<KingCrabBag>()));
+            LeadingConditionRule classicOnly = new(new Conditions.NotExpert());
+            classicOnly.OnSuccess(ItemDropRule.Common(ModContent.ItemType<RoyalClaw>(), 1, RoyalClawDropMin, RoyalClawDropMax));
+            npcLoot.Add(classicOnly);
         }
 
         public override void OnKill()

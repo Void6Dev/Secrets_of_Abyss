@@ -213,6 +213,11 @@ Mods: {
 				Tooltip: A claw fit for a king. Surely someone can forge something out of this.
 			}
 
+			KingCrabBag: {
+				DisplayName: Treasure Bag (King Crab)
+				Tooltip: "{$CommonItemTooltip.RightClickToOpen}"
+			}
+
 			CrabRoyalBait: {
 				DisplayName: Royal Bait
 				Tooltip:
