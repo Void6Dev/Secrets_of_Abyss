@@ -6,6 +6,7 @@ using Terraria.Audio;
 using Terraria.DataStructures;
 using Terraria.ID;
 using Terraria.ModLoader;
+using SoA.Common.Players;
 using SoA.Content.Items.Materials;
 using SoA.Content.Projectiles;
 
@@ -117,8 +118,8 @@ namespace SoA.Content.Items.Weapons
         }
     }
 
-    // Зарядка косы: тот же подход, что у ShurikenChargePlayer (InfernoShuriken.cs)
-    public class ScytheChargePlayer : ModPlayer
+    // Зарядка косы: общий цикл «зажал — отпустил» и его сеть — в ChargedWeaponPlayer
+    public class ScytheChargePlayer : ChargedWeaponPlayer
     {
         public const int MaxCharge = 60;
         public const int MinCharge = 15;
@@ -128,24 +129,19 @@ namespace SoA.Content.Items.Weapons
         private const float MinDamageMult = 0.6f;
         private const float MaxDamageMult = 1.5f;
 
-        public int chargeTime;
-        private bool _wasCharging;
-        private bool _fullPingSent;
+        protected override int WeaponType => ModContent.ItemType<ScytheOfFireStorm>();
+        protected override int MaxChargeTicks => MaxCharge;
+        protected override int MinChargeTicks => MinCharge;
+        protected override SoAPacketType PacketType => SoAPacketType.ScytheCharge;
 
         public float ChargeRatio => chargeTime / (float)MaxCharge;
 
         // Обе руки оттягивают косу за спину по мере зарядки
         public static float FrontArmRotation(float t, int direction)
-        {
-            float rotation = MathHelper.Lerp(-MathHelper.PiOver4, -MathHelper.Pi * 0.85f, t);
-            return direction == -1 ? -rotation : rotation;
-        }
+            => MirrorForDirection(MathHelper.Lerp(-MathHelper.PiOver4, -MathHelper.Pi * 0.85f, t), direction);
 
         public static float BackArmRotation(float t, int direction)
-        {
-            float rotation = MathHelper.Lerp(-MathHelper.PiOver4 * 0.6f, -MathHelper.Pi * 0.72f, t);
-            return direction == -1 ? -rotation : rotation;
-        }
+            => MirrorForDirection(MathHelper.Lerp(-MathHelper.PiOver4 * 0.6f, -MathHelper.Pi * 0.72f, t), direction);
 
         public static void ApplyPullBack(Player player)
         {
@@ -156,34 +152,11 @@ namespace SoA.Content.Items.Weapons
                 BackArmRotation(t, player.direction));
         }
 
-        public override void PostUpdate()
-        {
-            if (Player.whoAmI != Main.myPlayer)
-                return;
+        protected override bool ChargeInputHeld() => Player.channel;
 
-            bool heldScythe = Player.HeldItem.type == ModContent.ItemType<ScytheOfFireStorm>();
-            bool charging = heldScythe && Player.channel && !Player.CCed;
+        protected override void OnChargeTick() => ChargeVisuals();
 
-            if (charging)
-            {
-                chargeTime = Math.Min(chargeTime + 1, MaxCharge);
-                _wasCharging = true;
-                ChargeVisuals();
-            }
-            else if (_wasCharging)
-            {
-                if (chargeTime >= MinCharge)
-                    LaunchTornado();
-                chargeTime = 0;
-                _wasCharging = false;
-                _fullPingSent = false;
-            }
-            else
-            {
-                chargeTime = 0;
-                _fullPingSent = false;
-            }
-        }
+        protected override void OnRelease() => LaunchTornado();
 
         private void ChargeVisuals()
         {
@@ -192,9 +165,8 @@ namespace SoA.Content.Items.Weapons
                 FrontArmRotation(ChargeRatio, Player.direction));
 
             bool fullCharge = chargeTime >= MaxCharge;
-            if (fullCharge && !_fullPingSent)
+            if (JustReached(MaxCharge))
             {
-                _fullPingSent = true;
                 SoundEngine.PlaySound(SoundID.Item74 with { Volume = 0.6f, Pitch = 0.4f }, Player.position);
             }
 

@@ -116,8 +116,11 @@ Mods: {
 				DisplayName: Inferno Shuriken
 				Tooltip:
 					'''
-					Bounces and Explodes on impact, dealing area damage and igniting enemies.
-					Hold attack to charge the shuriken. Releasing at the perfect moment causes it to fly straight and deal increased damage.
+					Hold to heat the shuriken in your hand, release to throw
+					An early release throws it in an arc that ricochets between nearby enemies
+					Release when it flashes white-hot: it bites into the first enemy, saws it apart, tears out in an explosion and flies back
+					Catching it resets the cooldown and grants Heat (up to 3): each stack widens the explosion, at full Heat it sprays molten shards
+					Hold too long and it overheats: it burns your hand but pierces straight through enemies
 					'''
 			}
 
@@ -321,6 +324,8 @@ Mods: {
 			AquasawProjectile.DisplayName: Aquasaw Projectile
 			CursedProjectile.DisplayName: Cursed Projectile
 			InfernoShurikenProjectile.DisplayName: Inferno Shuriken Projectile
+			InfernoShurikenBurst.DisplayName: Inferno Shuriken Explosion
+			InfernoMoltenShard.DisplayName: Molten Shard
 			ShardedSpearBeam.DisplayName: Sharded Spear Beam
 			ShardedSpearProjectile.DisplayName: Sharded Spear Projectile
 			ShardedSpearHoldout.DisplayName: Sharded Spear Holdout
@@ -356,7 +361,7 @@ Mods: {
 
 			HellFireDebuff: {
 				DisplayName: Hellfire
-				Description: Burning intensely and slowed by 25%
+				Description: Burning intensely and slowed by 25% (bosses are not slowed)
 			}
 
 			CrushingPressureDebuff: {

@@ -42,7 +42,9 @@ namespace SoA.Common.Utils
 
         // Ближайший враг, по которому можно стрелять; null если никого в радиусе.
         // requireLineOfSight отсеивает цели за стенами — иначе самонаведение тащит снаряд в грунт.
-        public static NPC FindClosestNPC(Vector2 center, float maxDistance, bool requireLineOfSight = false)
+        // excludeWhoAmI — цель, которую пропустить (например, от которой рикошетим)
+        public static NPC FindClosestNPC(Vector2 center, float maxDistance, bool requireLineOfSight = false,
+            int excludeWhoAmI = -1)
         {
             NPC closest = null;
             float closestDistance = maxDistance;
@@ -51,7 +53,7 @@ namespace SoA.Common.Utils
             {
                 NPC npc = Main.npc[i];
 
-                if (!npc.CanBeChasedBy())
+                if (i == excludeWhoAmI || !npc.CanBeChasedBy())
                     continue;
 
                 float distance = Vector2.Distance(center, npc.Center);
