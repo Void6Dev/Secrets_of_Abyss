@@ -5,45 +5,55 @@ using Microsoft.Xna.Framework;
 
 namespace SoA.Content.Buffs
 {
+    // Адское пламя: горение втрое сильнее ванильного огня и замедление на 25%.
+    // Урон и замедление ведёт HellFireGlobalNPC
     public class HellFireDebuff : ModBuff
     {
         public override void SetStaticDefaults()
         {
             Main.debuff[Type] = true;
         }
-
-        public override void Update(NPC npc, ref int buffIndex)
-        {
-            if (Main.netMode == NetmodeID.MultiplayerClient)
-                return;
-
-            // Ticks every 10 frames = 3x faster than vanilla OnFire (~30 frames)
-            if (npc.buffTime[buffIndex] > 0 && npc.buffTime[buffIndex] % 10 == 0)
-            {
-                var hitInfo = new NPC.HitInfo()
-                {
-                    Damage = 4,
-                    Knockback = 0f,
-                    HitDirection = 0,
-                    Crit = false
-                };
-
-                npc.StrikeNPC(hitInfo);
-            }
-        }
     }
 
     public class HellFireGlobalNPC : GlobalNPC
     {
+        // Через lifeRegen, как ванильный огонь: урон идёт тиками игры на всех машинах одинаково
+        // и не удваивается в сети. Раньше тут был StrikeNPC раз в 10 тиков (24 урона/с мимо защиты)
+        private const int LifeRegenDrain = 24;   // полусекундные единицы: 12 урона/с
+        private const int DamageNumber = 4;      // число над врагом при каждом тике горения
+        private const float SlowFraction = 0.25f;
+
+        private static bool IsBurning(NPC npc) => npc.HasBuff(ModContent.BuffType<HellFireDebuff>());
+
+        public override void UpdateLifeRegen(NPC npc, ref int damage)
+        {
+            if (!IsBurning(npc))
+                return;
+
+            if (npc.lifeRegen > 0)
+                npc.lifeRegen = 0;
+            npc.lifeRegen -= LifeRegenDrain;
+            if (damage < DamageNumber)
+                damage = DamageNumber;
+        }
+
+        // Замедление без накопления: скорость не трогаем (иначе AI с разгоном тормозил почти
+        // до нуля — было velocity *= 0.85 каждый кадр), а отнимаем четверть шага этого тика.
+        // Боссов и сегменты составных врагов (черви) не замедляем
         public override void PostAI(NPC npc)
         {
-            if (!npc.friendly && npc.HasBuff(ModContent.BuffType<HellFireDebuff>()))
-                npc.velocity *= 0.85f;
+            if (npc.friendly || npc.boss || npc.realLife >= 0 || NPCID.Sets.ShouldBeCountedAsBoss[npc.type] || !IsBurning(npc))
+                return;
+
+            // Сдвиг назад по ходу может задеть стену, от которой враг только что развернулся
+            Vector2 slowed = npc.position - npc.velocity * SlowFraction;
+            if (npc.noTileCollide || !Collision.SolidCollision(slowed, npc.width, npc.height))
+                npc.position = slowed;
         }
 
         public override void DrawEffects(NPC npc, ref Color drawColor)
         {
-            if (!npc.HasBuff(ModContent.BuffType<HellFireDebuff>()))
+            if (!IsBurning(npc))
                 return;
 
             if (Main.rand.NextBool(3))

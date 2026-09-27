@@ -28,6 +28,28 @@ namespace SoA.Common.Graphics
             EdgeTear = 0.55f,
             Opacity = 1f,
         };
+
+        // Расплав: бело-жёлтое ядро, тело и багровый конец задаёт цвет вызывающего.
+        // Край рвётся слабее воды, струи бегут быстрее: жар «стекает» к хвосту
+        public static readonly TrailStyle Magma = new()
+        {
+            CoreColor = new Color(255, 236, 170),
+            CoreWidth = 0.3f,
+            NoiseScale = 1.2f,
+            ScrollSpeed = 2.6f,
+            EdgeTear = 0.4f,
+            Opacity = 1f,
+        };
+
+        // Цвет тела ленты расплава по progress (0 — голова, 1 — хвост): оранжевый → багровый → ноль.
+        // heat 0..1 добавляет белизны у головы
+        public static Color MagmaBody(float progress, float heat = 0f)
+        {
+            Color head = Color.Lerp(new Color(255, 130, 35), new Color(255, 210, 120), heat);
+            Color tail = new(150, 22, 10);
+            float fade = (1f - progress) * (1f - progress * 0.5f);
+            return Color.Lerp(head, tail, (float)Math.Pow(progress, 0.8f)) * fade;
+        }
     }
 
     // Лента-трейл по произвольному пути — для росчерков оружия, хвостов снарядов,
