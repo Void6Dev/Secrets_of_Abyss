@@ -10,7 +10,8 @@ namespace SoA.Common.Graphics.Particles
     //   • Debris — обломки грунта: гравитация, вращение, отскок от тайлов, освещены миром;
     //   • Smoke  — клубы пыли: растут, тормозят, оседают, освещены миром, НЕ светятся;
     //   • Streak — штрихи вдоль скорости: брызги воды, искры; светятся (аддитив);
-    //   • Glow   — мягкое светящееся пятно, гаснет и сжимается.
+    //   • Glow   — мягкое светящееся пятно, гаснет и сжимается;
+    //   • Bubble — пузырь в воде: всплывает, покачивается, лопается у поверхности.
     // Плюс световые импульсы: настоящий свет на мир (Lighting.AddLight) на несколько тиков —
     // вспышка удара освещает грунт и стены вокруг, а не только рисуется поверх.
     //
@@ -23,8 +24,12 @@ namespace SoA.Common.Graphics.Particles
         private const int DebrisFadeTicks = 14;     // обломок гаснет в последние тики жизни
         private const float DebrisBounce = 0.35f;   // сколько скорости сохраняет отскок
         private const float DebrisGroundFriction = 0.7f;
+        private const float BubbleBuoyancy = -0.06f;     // пузырь разгоняется вверх
+        private const float BubbleMaxRise = 3.2f;
+        private const float BubbleWobble = 0.35f;        // размах покачивания, px за тик
+        private static readonly Color BubblePop = new(200, 235, 255);
 
-        public enum Kind : byte { Debris, Smoke, Streak, Glow }
+        public enum Kind : byte { Debris, Smoke, Streak, Glow, Bubble }
 
         private struct Particle
         {
@@ -153,6 +158,25 @@ namespace SoA.Common.Graphics.Particles
             p.Life = p.MaxLife = life;
         }
 
+        // Пузырь в воде. size — диаметр в px мира. Вне воды лопается сразу
+        public static void SpawnBubble(Vector2 position, Vector2 velocity, float size, Color color, int life = 90)
+        {
+            if (!TryAllocate(out int index))
+                return;
+            ref Particle p = ref _particles[index];
+            p.Kind = Kind.Bubble;
+            p.Position = position;
+            p.Velocity = velocity;
+            p.Rotation = Main.rand.NextFloat(MathHelper.TwoPi);   // фаза покачивания
+            p.Spin = Main.rand.NextFloat(0.08f, 0.16f);           // частота покачивания
+            p.Size = new Vector2(size);
+            p.Color = color;
+            p.Opacity = 1f;
+            p.Gravity = BubbleBuoyancy * Main.rand.NextFloat(0.7f, 1.3f);
+            p.Drag = 0.94f;
+            p.Life = p.MaxLife = life;
+        }
+
         // Свет на мир: intensity ~1 — факел, 2–3 — вспышка удара. Гаснет линейно за life тиков
         public static void AddLight(Vector2 position, Color color, float intensity, int life = 12)
         {
@@ -200,9 +224,18 @@ namespace SoA.Common.Graphics.Particles
                 p.Rotation += p.Spin;
 
                 if (p.Kind == Kind.Debris)
+                {
                     MoveDebris(ref p);
+                }
+                else if (p.Kind == Kind.Bubble)
+                {
+                    if (!MoveBubble(ref p))
+                        p.Life = 1; // лопнул — уйдёт на следующем тике
+                }
                 else
+                {
                     p.Position += p.Velocity;
+                }
             }
 
             for (int i = _lightCount - 1; i >= 0; i--)
@@ -243,6 +276,29 @@ namespace SoA.Common.Graphics.Particles
                 p.Position = next;
         }
 
+        // Всплывает с покачиванием; false — вышел из воды или упёрся в блок и лопнул
+        private static bool MoveBubble(ref Particle p)
+        {
+            if (p.Velocity.Y < -BubbleMaxRise)
+                p.Velocity.Y = -BubbleMaxRise;
+            p.Position += p.Velocity + new Vector2((float)Math.Sin(p.Rotation) * BubbleWobble, 0f);
+
+            Tile tile = Framing.GetTileSafely(p.Position.ToTileCoordinates());
+            bool inWater = tile.LiquidAmount > 0 && tile.LiquidType == Terraria.ID.LiquidID.Water;
+            bool blocked = tile.HasTile && Main.tileSolid[tile.TileType] && !Main.tileSolidTop[tile.TileType];
+            if (inWater && !blocked)
+                return true;
+
+            // Хлопок: пара брызг и вспышка
+            for (int i = 0; i < 2; i++)
+            {
+                Vector2 dir = new Vector2(Main.rand.NextFloatDirection(), -1f).SafeNormalize(-Vector2.UnitY);
+                SpawnStreak(p.Position, dir * Main.rand.NextFloat(1f, 2.2f), BubblePop * 0.6f, 1.2f,
+                    gravity: 0.12f, life: 10, lengthPerSpeed: 2f);
+            }
+            return false;
+        }
+
         #endregion
 
         #region Отрисовка
@@ -280,6 +336,8 @@ namespace SoA.Common.Graphics.Particles
                     DrawStreak(sb, ref p);
                 else if (p.Kind == Kind.Glow)
                     DrawGlow(sb, ref p);
+                else if (p.Kind == Kind.Bubble)
+                    DrawBubble(sb, ref p);
             }
             sb.End();
         }
@@ -332,6 +390,20 @@ namespace SoA.Common.Graphics.Particles
             Texture2D tex = SoAVfx.SoftGlow;
             sb.Draw(tex, p.Position - Main.screenPosition, null, c, 0f, tex.Size() / 2f,
                 size / tex.Width, SpriteEffects.None, 0f);
+        }
+
+        // Пузырь светится слабо: в тёмной воде почти прозрачен, но обод и блик читаются.
+        // Появляется за несколько тиков и немного «дышит» размером
+        private static void DrawBubble(SpriteBatch sb, ref Particle p)
+        {
+            float age = Age(p);
+            float alpha = Math.Min(age / 0.08f, 1f) * Math.Min((1f - age) / 0.15f, 1f);
+            float breathe = 1f + 0.06f * (float)Math.Sin(p.Rotation * 1.7f);
+            Color light = Color.Lerp(Lit(p.Position, p.Color), p.Color, 0.4f);
+
+            Texture2D tex = SoAVfx.Bubble;
+            sb.Draw(tex, p.Position - Main.screenPosition, null, light * (p.Opacity * alpha), 0f, tex.Size() / 2f,
+                p.Size.X * breathe / tex.Width, SpriteEffects.None, 0f);
         }
 
         #endregion

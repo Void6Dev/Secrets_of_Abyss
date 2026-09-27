@@ -2,6 +2,7 @@
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
 using Terraria;
+using Terraria.DataStructures;
 using Terraria.Graphics.Shaders;
 using Terraria.ModLoader;
 using SoA.Common.Graphics.SandFormation;
@@ -61,6 +62,40 @@ namespace SoA.Common.Graphics
             }
         }
 
+        // Пузырь: тонкий светлый обод, едва заметная заливка и блик сверху-слева.
+        // Рисуется кодом, как Quad: премультиплицированный белый, цвет задаёт вызывающий
+        private const int BubbleSize = 32;
+        private static Texture2D _bubble;
+        public static Texture2D Bubble
+        {
+            get
+            {
+                if (_bubble == null || _bubble.IsDisposed)
+                {
+                    _bubble = new Texture2D(Main.graphics.GraphicsDevice, BubbleSize, BubbleSize);
+                    Color[] pixels = new Color[BubbleSize * BubbleSize];
+                    float radius = BubbleSize / 2f - 1f;
+                    Vector2 center = new(BubbleSize / 2f - 0.5f);
+                    Vector2 highlight = center + new Vector2(-0.38f, -0.38f) * radius;
+                    for (int y = 0; y < BubbleSize; y++)
+                    {
+                        for (int x = 0; x < BubbleSize; x++)
+                        {
+                            Vector2 at = new(x, y);
+                            float d = Vector2.Distance(at, center) / radius;          // 0 — центр, 1 — край
+                            float rim = MathHelper.Clamp(1f - System.Math.Abs(d - 0.86f) / 0.14f, 0f, 1f);
+                            float fill = d < 1f ? 0.12f : 0f;
+                            float shine = MathHelper.Clamp(1f - Vector2.Distance(at, highlight) / (radius * 0.24f), 0f, 1f);
+                            float alpha = MathHelper.Clamp(rim * rim * 0.9f + fill + shine * shine, 0f, 1f);
+                            pixels[y * BubbleSize + x] = Color.White * alpha;
+                        }
+                    }
+                    _bubble.SetData(pixels);
+                }
+                return _bubble;
+            }
+        }
+
         // Текстура, которую пользователь ещё может не нарисовать: пока файла нет, рисуем
         // старой звездой, чтобы эффект не пропал. Проверяем один раз за загрузку мода
         private static Texture2D LoadOptional(ref Asset<Texture2D> asset, ref bool checkedOnce, string path,
@@ -98,6 +133,13 @@ namespace SoA.Common.Graphics
         {
             color.A = 0;
             return color;
+        }
+
+        // Добавить спрайт в слой отрисовки игрока (PlayerDrawLayer). pos — экранные координаты
+        public static void AddPlayerDraw(ref PlayerDrawSet drawInfo, Texture2D tex, Vector2 pos, Color color,
+            float rotation, Vector2 origin, Vector2 scale, SpriteEffects effects = SpriteEffects.None, Rectangle? source = null)
+        {
+            drawInfo.DrawDataCache.Add(new DrawData(tex, pos, source, color, rotation, origin, scale, effects, 0));
         }
 
         // Локальное преобразование поверх камеры: все Begin/End этого класса его соблюдают, поэтому

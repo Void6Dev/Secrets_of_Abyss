@@ -18,6 +18,8 @@ namespace SoA.Content.Items.BossBags
         public override void SetStaticDefaults()
         {
             ItemID.Sets.BossBag[Type] = true;
+            // Как у мешков ранних боссов: броня разработчиков выпадает только на особых сидах
+            ItemID.Sets.PreHardmodeLikeBossBag[Type] = true;
             Item.ResearchUnlockCount = 3;
         }
 

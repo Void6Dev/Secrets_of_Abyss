@@ -207,8 +207,8 @@ Mods: {
 				DisplayName: Halo Of Breathing
 				Tooltip:
 					'''
-					Grants the ability to breathe and swim freely while submerged in deep water
-					The halo glows when active
+					In a large, deep body of water you use up air three times slower
+					The halo softly lights up the water around you
 					'''
 			}
 
@@ -274,10 +274,9 @@ Mods: {
 				DisplayName: Tideskimmer Boots
 				Tooltip:
 					'''
-					Water no longer drags you down: you keep full speed while diving
-					Underwater every press of jump gives one short, low stroke
-					The deeper you dive, the more tidal force the boots store
-					Breaking the surface hurls you into the air like a breaching dolphin
+					Water no longer slows you down: you move freely while submerged
+					Underwater you can make one low jump before touching the bottom again
+					Hold jump to build pressure, then the boots shoot you up and out of the water
 					Water landings and your own launch never deal fall damage
 					'''
 			}

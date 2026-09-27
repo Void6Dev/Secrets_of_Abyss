@@ -2,10 +2,11 @@ using Terraria;
 using Terraria.ModLoader;
 using Terraria.ID;
 using SoA.Content.Items.Placebles;
-using Microsoft.Xna.Framework;
 
 namespace SoA.Content.Items.Accessories
 {
+    // Нимб дыхания: в большом глубоком водоёме воздух тратится втрое медленнее,
+    // вокруг носителя — мягкий свет. Плавать не учит. Логика — в HOBusage
     public class HaloOfBreathing : ModItem
     {
         // Спрайт лежит рядом с кодом в папке контента, а не по пути пространства имён
@@ -22,52 +23,18 @@ namespace SoA.Content.Items.Accessories
 
         public override void UpdateAccessory(Player player, bool hideVisual)
         {
-            if (IsInDeepWater(player))
-            {
-                player.gills = true;
-                player.accDivingHelm = true;
-                player.accFlipper = true; // свободное плавание, пока нимб активен
-                var modPlayer = player.GetModPlayer<HOBusage>();
-                modPlayer.hasHaloOfBreathing = true;
-                modPlayer.showHaloVisual = !hideVisual;
-            }
+            var modPlayer = player.GetModPlayer<HOBusage>();
+            modPlayer.hasHaloOfBreathing = true;
+            modPlayer.showHaloVisual = !hideVisual;
         }
 
-        private static bool IsInDeepWater(Player player)
+        public override void AddRecipes()
         {
-            int waterTiles = 0;
-            int checkRadius = 5; 
-
-            
-            Point tilePosition = player.Center.ToTileCoordinates();
-
-            for (int x = -checkRadius; x <= checkRadius; x++)
-            {
-                for (int y = -checkRadius; y <= checkRadius; y++)
-                {
-                    int checkX = tilePosition.X + x;
-                    int checkY = tilePosition.Y + y;
-
-                    if (checkX >= 0 && checkX < Main.maxTilesX && checkY >= 0 && checkY < Main.maxTilesY)
-                    {
-                        Tile tile = Main.tile[checkX, checkY];
-                        if (tile != null && tile.LiquidAmount > 128 && tile.LiquidType == LiquidID.Water) 
-                        {
-                            waterTiles++;
-                        }
-                    }
-                }
-            }
-            return waterTiles >= 40; 
+            Recipe recipe = CreateRecipe();
+            recipe.AddIngredient(ItemID.Seashell, 1);
+            recipe.AddIngredient(ModContent.ItemType<Tidesand>(), 30);
+            recipe.AddTile(TileID.WaterFountain);
+            recipe.Register();
         }
-
-        public override void AddRecipes() 
-        {
-			Recipe recipe = CreateRecipe();
-			recipe.AddIngredient(ItemID.Seashell, 1);
-			recipe.AddIngredient(ModContent.ItemType<Tidesand>(), 30);
-			recipe.AddTile(TileID.WaterFountain);
-			recipe.Register();
-		}
     }
 }

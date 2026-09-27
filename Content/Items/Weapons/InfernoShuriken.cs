@@ -130,21 +130,21 @@ namespace SoA.Content.Items.Weapons
             // Ореол накала за спрайтом
             float pulse = inWindow ? 0.85f + 0.15f * MathF.Sin(Main.GameUpdateCount * 0.4f) : 1f;
             float haloSize = (34f + 18f * t + 14f * overheat) * pulse;
-            Add(ref drawInfo, glow, drawPos, SoAVfx.Additive(heat * (0.25f + 0.45f * t)), 0f, glow.Size() / 2f,
+            SoAVfx.AddPlayerDraw(ref drawInfo, glow, drawPos, SoAVfx.Additive(heat * (0.25f + 0.45f * t)), 0f, glow.Size() / 2f,
                 new Vector2(haloSize / glow.Width));
 
             DrawTimingRing(ref drawInfo, drawPos, charge);
 
             // Сам сюрикен светится сам: цвет не зависит от освещения
             if (t < 1f)
-                Add(ref drawInfo, texNormal, drawPos, Color.White * (1f - t), spriteRot, origin, Vector2.One);
+                SoAVfx.AddPlayerDraw(ref drawInfo, texNormal, drawPos, Color.White * (1f - t), spriteRot, origin, Vector2.One);
             if (t > 0f)
-                Add(ref drawInfo, texActive, drawPos, Color.White * t, spriteRot, origin, Vector2.One);
+                SoAVfx.AddPlayerDraw(ref drawInfo, texActive, drawPos, Color.White * t, spriteRot, origin, Vector2.One);
 
             // Накал поверх спрайта: в окне — белое свечение, при перегреве — мерцание
             float overlay = inWindow ? 0.35f * pulse : 0.2f * t + 0.45f * overheat;
             if (overlay > 0f)
-                Add(ref drawInfo, texActive, drawPos, SoAVfx.Additive(heat * overlay), spriteRot, origin, new Vector2(1.08f));
+                SoAVfx.AddPlayerDraw(ref drawInfo, texActive, drawPos, SoAVfx.Additive(heat * overlay), spriteRot, origin, new Vector2(1.08f));
 
             DrawGlint(ref drawInfo, drawPos, charge);
             DrawHeatStacks(ref drawInfo, drawPos, mp.heat, heat);
@@ -169,7 +169,7 @@ namespace SoA.Content.Items.Weapons
             {
                 float angle = MathHelper.TwoPi * i / RingSegments + Main.GameUpdateCount * 0.05f;
                 Vector2 pos = center + angle.ToRotationVector2() * radius;
-                Add(ref drawInfo, streak, pos, color, angle + MathHelper.PiOver2, streak.Size() / 2f,
+                SoAVfx.AddPlayerDraw(ref drawInfo, streak, pos, color, angle + MathHelper.PiOver2, streak.Size() / 2f,
                     new Vector2(segment / streak.Width, thickness / streak.Height));
             }
         }
@@ -190,11 +190,11 @@ namespace SoA.Content.Items.Weapons
             float thickness = 2f + 6f * g;
             float spin = since * 0.06f;
 
-            Add(ref drawInfo, streak, center, color, spin, origin, new Vector2(length / streak.Width, thickness / streak.Height));
-            Add(ref drawInfo, streak, center, color, spin + MathHelper.PiOver2, origin, new Vector2(length / streak.Width, thickness / streak.Height));
-            Add(ref drawInfo, streak, center, color * 0.5f, spin + MathHelper.PiOver4, origin,
+            SoAVfx.AddPlayerDraw(ref drawInfo, streak, center, color, spin, origin, new Vector2(length / streak.Width, thickness / streak.Height));
+            SoAVfx.AddPlayerDraw(ref drawInfo, streak, center, color, spin + MathHelper.PiOver2, origin, new Vector2(length / streak.Width, thickness / streak.Height));
+            SoAVfx.AddPlayerDraw(ref drawInfo, streak, center, color * 0.5f, spin + MathHelper.PiOver4, origin,
                 new Vector2(length * 0.45f / streak.Width, thickness * 0.7f / streak.Height));
-            Add(ref drawInfo, streak, center, color * 0.5f, spin - MathHelper.PiOver4, origin,
+            SoAVfx.AddPlayerDraw(ref drawInfo, streak, center, color * 0.5f, spin - MathHelper.PiOver4, origin,
                 new Vector2(length * 0.45f / streak.Width, thickness * 0.7f / streak.Height));
         }
 
@@ -209,15 +209,9 @@ namespace SoA.Content.Items.Weapons
             {
                 float angle = Main.GameUpdateCount * 0.12f + MathHelper.TwoPi * i / stacks;
                 Vector2 pos = center + angle.ToRotationVector2() * HeatOrbitRadius;
-                Add(ref drawInfo, glow, pos, SoAVfx.Additive(Color.Lerp(heat, Color.White, 0.4f) * 0.9f), 0f, glow.Size() / 2f,
+                SoAVfx.AddPlayerDraw(ref drawInfo, glow, pos, SoAVfx.Additive(Color.Lerp(heat, Color.White, 0.4f) * 0.9f), 0f, glow.Size() / 2f,
                     new Vector2(12f / glow.Width));
             }
-        }
-
-        private static void Add(ref PlayerDrawSet drawInfo, Texture2D tex, Vector2 pos, Color color, float rotation,
-            Vector2 origin, Vector2 scale)
-        {
-            drawInfo.DrawDataCache.Add(new DrawData(tex, pos, null, color, rotation, origin, scale, SpriteEffects.None, 0));
         }
     }
 
