@@ -21,7 +21,7 @@ namespace SoA.Content.Projectiles
         public override string Texture => "SoA/Content/Items/Weapons/ClawsOfLavaShadow";
 
         // ---------- ДУГА ----------
-        private const int SlashUpdates = 24;          // 12 тиков × 2 подшага: дуга без «лесенки»
+        private const int SlashUpdates = 16;          // 8 тиков × 2 подшага: быстрый рывок, дуга без «лесенки»
         private const float ArcHalf = 1.0f;           // полураствор дуги, рад
         private const float ArcHalfHeavy = 1.3f;
         private const float Reach = 60f;              // от центра игрока до кончиков когтей
@@ -32,7 +32,7 @@ namespace SoA.Content.Projectiles
         private const float HitLineWidth = 22f;
 
         // ---------- ВИД ----------
-        private const int TrailLength = 14;
+        private const int TrailLength = 12;
         private const float MarkSpacing = 9f;         // расстояние между тремя следами когтей
         private const float ClawScale = 1.45f;
         private const float ClawScaleHeavy = 1.75f;

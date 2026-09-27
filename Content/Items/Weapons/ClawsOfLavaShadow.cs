@@ -25,13 +25,14 @@ namespace SoA.Content.Items.Weapons
 
         public override void SetDefaults()
         {
-            // Урон ниже, чем у обычного оружия этапа: метка копит его и взрывается вторым разом
-            Item.damage = 24;
+            // Урон ниже, чем у обычного оружия этапа: метка копит его и взрывается вторым разом.
+            // Удары быстрые (8 тиков), поэтому за удар — меньше: урон в секунду почти как был
+            Item.damage = 19;
             Item.DamageType = DamageClass.Melee;
             Item.width = 30;
             Item.height = 20;
-            Item.useTime = 13;
-            Item.useAnimation = 13;
+            Item.useTime = 8;
+            Item.useAnimation = 8;
             Item.useStyle = ItemUseStyleID.Shoot;
             Item.knockBack = 2;
             Item.value = Item.sellPrice(gold: 3);
@@ -132,11 +133,21 @@ namespace SoA.Content.Items.Weapons
     {
         private const int ComboResetTicks = 40;   // пауза, после которой серия начинается заново
         private const int HeavyEvery = 4;
-        private const int DashDuration = 25;
-        private const float DashSpeed = 20f;
+
+        // ---------- РЫВОК ----------
+        // Почти мгновенный: вся дистанция за несколько тиков, в конце — почти полная остановка.
+        // Путь прощупывается заранее: на такой скорости ванильные столкновения пропускают
+        // тонкие стены, и игрок проскакивал бы сквозь них
+        private const float DashDistance = 260f;    // ~16 блоков
+        private const int DashTicks = 5;
+        private const float DashSweepStep = 4f;
+        private const float DashExitSpeed = 3f;     // остаток скорости после рывка — почти без инерции
+        private const int DashGraceTicks = 10;      // неуязвимость держится чуть дольше самого рывка
+        private const float RibbonStep = 6f;        // шаг огненной ленты вдоль пути
 
         private static readonly Color DashFire = new(255, 130, 35);
         private static readonly Color DashCore = new(255, 230, 170);
+        private static readonly Color DashEmber = new(200, 50, 20);
         private static readonly Color DashSmoke = new(60, 42, 36);
 
         private float _slashSide = -1f;
@@ -144,8 +155,9 @@ namespace SoA.Content.Items.Weapons
         private ulong _lastSlashTick;
 
         public bool isDashing;
-        private int _dashTicks;
-        private Vector2 _dashVelocity;
+        private Vector2 _dashDir;
+        private float _dashRemaining;
+        private float _dashStep;
 
         public void NextSlash(out float side, out bool heavy)
         {
@@ -161,78 +173,115 @@ namespace SoA.Content.Items.Weapons
 
         public void StartDash()
         {
-            isDashing = true;
-            _dashTicks = 0;
-            _dashVelocity = (Main.MouseWorld - Player.Center).SafeNormalize(Vector2.UnitX * Player.direction) * DashSpeed;
-            Player.velocity = _dashVelocity;
+            _dashDir = (Main.MouseWorld - Player.Center).SafeNormalize(Vector2.UnitX * Player.direction);
+            _dashRemaining = FreeDistance(_dashDir, DashDistance);
+            _dashStep = _dashRemaining / DashTicks;
+            isDashing = _dashRemaining > 1f;
 
-            SoundEngine.PlaySound(SoundID.Item74, Player.Center);
-            if (Main.dedServ)
-                return;
-
-            // Воспламенение: кольцо раскалённых брызг и вспышка
-            for (int i = 0; i < 22; i++)
-            {
-                Vector2 dir = Main.rand.NextVector2Unit();
-                SoAParticles.SpawnStreak(Player.Center + dir * 8f, dir * Main.rand.NextFloat(4f, 10f),
-                    Color.Lerp(DashFire, DashCore, Main.rand.NextFloat(0.5f)), Main.rand.NextFloat(2f, 3.5f),
-                    gravity: 0.05f, life: Main.rand.Next(16, 28), lengthPerSpeed: 2.4f);
-            }
-            SoAParticles.SpawnGlow(Player.Center, Vector2.Zero, DashCore, 40f, 150f, 12);
-            SoAParticles.AddLight(Player.Center, DashFire, 2f, 14);
+            SoundEngine.PlaySound(SoundID.Item74 with { Pitch = 0.2f }, Player.Center);
+            if (!Main.dedServ)
+                SpawnIgnition(Player.Center);
         }
 
-        public override void PostUpdate()
+        // Сколько можно пролететь по направлению, не задев сплошной блок
+        private float FreeDistance(Vector2 dir, float max)
+        {
+            Vector2 position = Player.position;
+            float traveled = 0f;
+            while (traveled + DashSweepStep <= max)
+            {
+                Vector2 next = position + dir * DashSweepStep;
+                if (Collision.SolidCollision(next, Player.width, Player.height))
+                    break;
+                position = next;
+                traveled += DashSweepStep;
+            }
+            return traveled;
+        }
+
+        // Скорость ставим прямо перед сдвигом игрока: гравитация и ограничения скорости
+        // этого тика уже отработали и рывок не срежут
+        public override void PreUpdateMovement()
         {
             if (!isDashing)
                 return;
 
-            _dashTicks++;
-            if (_dashTicks <= DashDuration)
-            {
-                Player.immune = true;
-                Player.immuneTime = 15;
-                if (!Main.dedServ)
-                    SpawnDashTrail();
-                return;
-            }
+            float step = Math.Min(_dashStep, _dashRemaining);
+            Vector2 from = Player.Center;
+            Player.velocity = _dashDir * step;
+            _dashRemaining -= step;
 
-            isDashing = false;
-            _dashTicks = 0;
-            Player.immune = false;
+            Player.fallStart = (int)(Player.position.Y / 16f); // рывок вниз — не падение
+            Player.immune = true;
+            Player.immuneTime = Math.Max(Player.immuneTime, DashGraceTicks);
+
             if (!Main.dedServ)
-                SpawnDashEnd();
+                SpawnFireRibbon(from, from + Player.velocity);
+
+            if (_dashRemaining <= 0.5f)
+                EndDash();
         }
 
-        // Огненный след: языки пламени срываются назад, за ними тянется дым
-        private void SpawnDashTrail()
+        private void EndDash()
         {
-            Vector2 back = -_dashVelocity.SafeNormalize(Vector2.Zero);
-            for (int i = 0; i < 3; i++)
-            {
-                Vector2 at = Player.Center + Main.rand.NextVector2Circular(Player.width * 0.5f, Player.height * 0.5f);
-                SoAParticles.SpawnStreak(at, back.RotatedByRandom(0.5f) * Main.rand.NextFloat(3f, 7f),
-                    Color.Lerp(DashFire, DashCore, Main.rand.NextFloat(0.4f)), Main.rand.NextFloat(2.5f, 4f),
-                    gravity: -0.04f, life: Main.rand.Next(14, 24), lengthPerSpeed: 2.2f);
-            }
-            if (_dashTicks % 3 == 0)
-            {
-                SoAParticles.SpawnSmoke(Player.Center, back * 1.5f + new Vector2(0f, -0.4f), DashSmoke,
-                    30f, 90f, 0.4f, Main.rand.Next(40, 60));
-            }
-            SoAParticles.SpawnGlow(Player.Center, Vector2.Zero, DashFire * 0.35f, 50f, 70f, 6);
-            Lighting.AddLight(Player.Center, DashFire.ToVector3());
+            isDashing = false;
+            Player.velocity = _dashDir * DashExitSpeed;
+            if (!Main.dedServ)
+                SpawnDashEnd(Player.Center + Player.velocity);
         }
 
-        private void SpawnDashEnd()
+        // Воспламенение на старте: кольцо раскалённых брызг и вспышка
+        private void SpawnIgnition(Vector2 at)
         {
             for (int i = 0; i < 18; i++)
             {
                 Vector2 dir = Main.rand.NextVector2Unit();
-                SoAParticles.SpawnStreak(Player.Center, dir * Main.rand.NextFloat(3f, 8f), DashFire,
+                SoAParticles.SpawnStreak(at + dir * 8f, dir * Main.rand.NextFloat(3f, 8f),
+                    Color.Lerp(DashFire, DashCore, Main.rand.NextFloat(0.5f)), Main.rand.NextFloat(2f, 3.2f),
+                    gravity: 0.05f, life: Main.rand.Next(14, 24), lengthPerSpeed: 2.2f);
+            }
+            SoAParticles.SpawnGlow(at, Vector2.Zero, DashCore, 30f, 130f, 10);
+            SoAParticles.AddLight(at, DashFire, 1.8f, 12);
+        }
+
+        // Огненная лента вдоль пути: раскалённое ядро, языки пламени вверх и дым. Живёт около
+        // секунды и тает с хвоста — позади остаётся горящий след, а не облачко у ног
+        private void SpawnFireRibbon(Vector2 from, Vector2 to)
+        {
+            Vector2 segment = to - from;
+            float length = segment.Length();
+            int points = Math.Max(1, (int)(length / RibbonStep));
+            for (int i = 0; i < points; i++)
+            {
+                Vector2 at = from + segment * (i / (float)points) + Main.rand.NextVector2Circular(4f, 4f);
+
+                // Ядро ленты: раскалённое и широкое, медленно разгорается и остывает
+                SoAParticles.SpawnGlow(at, Vector2.Zero, Color.Lerp(DashFire, DashCore, Main.rand.NextFloat(0.3f)) * 0.55f,
+                    34f, 16f, Main.rand.Next(38, 60));
+
+                if (i % 2 == 0)
+                {
+                    SoAParticles.SpawnStreak(at, new Vector2(Main.rand.NextFloatDirection() * 0.6f, -Main.rand.NextFloat(1f, 2.6f)),
+                        Color.Lerp(DashFire, DashEmber, Main.rand.NextFloat()), Main.rand.NextFloat(2f, 3.4f),
+                        gravity: -0.04f, life: Main.rand.Next(30, 55), lengthPerSpeed: 2.4f);
+                }
+                if (i % 4 == 0)
+                {
+                    SoAParticles.SpawnSmoke(at, new Vector2(0f, -0.5f), DashSmoke, 24f, 70f, 0.3f, Main.rand.Next(50, 75));
+                }
+            }
+            SoAParticles.AddLight(Vector2.Lerp(from, to, 0.5f), DashFire, 1.6f, 40);
+        }
+
+        private void SpawnDashEnd(Vector2 at)
+        {
+            for (int i = 0; i < 14; i++)
+            {
+                Vector2 dir = _dashDir.RotatedByRandom(1.1f);
+                SoAParticles.SpawnStreak(at, dir * Main.rand.NextFloat(3f, 8f), DashFire,
                     Main.rand.NextFloat(2f, 3f), gravity: 0.12f, life: Main.rand.Next(14, 24), lengthPerSpeed: 2.2f);
             }
-            SoAParticles.SpawnSmoke(Player.Center, new Vector2(0f, -0.6f), DashSmoke, 40f, 120f, 0.45f, 60);
+            SoAParticles.SpawnGlow(at, Vector2.Zero, DashFire * 0.6f, 30f, 80f, 10);
         }
     }
 }
