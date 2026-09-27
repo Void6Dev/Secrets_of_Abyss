@@ -16,6 +16,7 @@ Mods: {
 					'''
 					A water-driven chainsaw of the forgotten tides
 					Deals 25% more damage to enemies soaked in liquid
+					Cuts faster underwater
 					''' */
 			}
 
@@ -124,8 +125,9 @@ Mods: {
 				// DisplayName: Lava claw
 				/* Tooltip:
 					'''
-					Mark an enemy that accumulates damage with each hit, and explodes if you stop dealing damage
-					Right click for small dash with immunity frames(Cooldown 2 sec)
+					Rakes toward the cursor with alternating claws, every fourth strike is a heavy one
+					Hits brand the enemy: the brand stores the damage and erupts once you stop attacking
+					Right click to dash through fire with brief invulnerability (2 second cooldown)
 					Ouch, too hot
 					''' */
 			}
@@ -168,7 +170,11 @@ Mods: {
 
 			ShardedSpear: {
 				// DisplayName: Spear of Waves
-				// Tooltip: Fire laser beam
+				/* Tooltip:
+					'''
+					Hold to channel a piercing beam of the abyssal tide
+					The crown's spear, reforged by the deep
+					''' */
 			}
 
 			ScytheOfFireStorm: {
@@ -234,6 +240,7 @@ Mods: {
 					A royal offering
 					Right click the Royal Tide Altar in the sunken galleon
 					with this in your inventory to summon the King Crab
+					Not consumed
 					''' */
 			}
 
@@ -332,6 +339,8 @@ Mods: {
 			RoyalSpearReforge.DisplayName: Королевская Регалия
 			RoyalSpearFlurry.DisplayName: Королевская Регалия
 			RoyalSpearDashTrail.DisplayName: Королевская Регалия
+			// LavaClawBurst.DisplayName: Lava Claw Burst
+			// LavaClawSlash.DisplayName: Lava Claw Slash
 		}
 
 		Buffs: {

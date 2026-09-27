@@ -18,7 +18,6 @@ namespace SoA.Content.Items.BossBags
         public override void SetStaticDefaults()
         {
             ItemID.Sets.BossBag[Type] = true;
-            ItemID.Sets.PreHardmode[Type] = true;
             Item.ResearchUnlockCount = 3;
         }
 

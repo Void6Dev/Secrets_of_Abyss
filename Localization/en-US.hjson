@@ -339,6 +339,8 @@ Mods: {
 			RoyalSpearReforge.DisplayName: Royal Regalia
 			RoyalSpearFlurry.DisplayName: Royal Regalia
 			RoyalSpearDashTrail.DisplayName: Royal Regalia
+			LavaClawBurst.DisplayName: Lava Claw Burst
+			LavaClawSlash.DisplayName: Lava Claw Slash
 		}
 
 		Buffs: {

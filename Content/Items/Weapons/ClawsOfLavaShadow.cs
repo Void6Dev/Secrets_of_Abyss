@@ -25,9 +25,6 @@ namespace SoA.Content.Items.Weapons
 
         public override void SetDefaults()
         {
-            // Урон ниже, чем у обычного оружия этапа: метка копит его и взрывается вторым разом.
-            // Удары быстрые (8 тиков), поэтому за удар — меньше: урон в секунду почти как был
-            Item.damage = 19;
             Item.DamageType = DamageClass.Melee;
             Item.width = 30;
             Item.height = 20;
@@ -36,12 +33,12 @@ namespace SoA.Content.Items.Weapons
             Item.useStyle = ItemUseStyleID.Shoot;
             Item.knockBack = 2;
             Item.value = Item.sellPrice(gold: 3);
-            Item.rare = ItemRarityID.Orange; // этап адского камня, а не финал игры
+            Item.rare = ItemRarityID.Orange; 
             Item.autoReuse = true;
-            Item.noMelee = true;       // режет снаряд взмаха
-            Item.noUseGraphic = true;  // коготь в руке рисует LavaClawSlash
+            Item.noMelee = true;       
+            Item.noUseGraphic = true;  
             Item.shoot = ModContent.ProjectileType<LavaClawSlash>();
-            Item.shootSpeed = 1f;      // нужна только сторона прицела
+            Item.shootSpeed = 1f;    
         }
 
         public override void AddRecipes()
