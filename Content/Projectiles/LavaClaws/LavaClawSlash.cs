@@ -31,9 +31,16 @@ namespace SoA.Content.Projectiles
         private const float ActiveTo = 0.8f;
         private const float HitLineWidth = 22f;
 
+        private const int LingerUpdates = 12;         // после удара царапины ещё 6 тиков висят и остывают
+
         // ---------- ВИД ----------
-        private const int TrailLength = 12;
+        private const int TrailLength = SlashUpdates; // след лежит на всей дуге удара, а не только за когтем
         private const float MarkSpacing = 9f;         // расстояние между тремя следами когтей
+        private const float MarkFan = 0.35f;          // к концу царапины расходятся веером, как пальцы
+        private const float MarkWidth = 8f;
+        private const float MarkWidthHeavy = 10.5f;
+        private const float CoolUpdates = 10f;        // за сколько подшагов участок остывает до красного
+        private static readonly Color ScorchColor = new(70, 12, 6); // тёмная подложка: след читается и на светлом
         private const float ClawScale = 1.45f;
         private const float ClawScaleHeavy = 1.75f;
         private static readonly Vector2 WristOrigin = new(6f, 22f); // запястье на спрайте; когти смотрят вправо-вверх
@@ -51,9 +58,11 @@ namespace SoA.Content.Projectiles
         private float Aim => Projectile.ai[2];
         private ref float Age => ref Projectile.localAI[0];
 
-        // След: (угол, радиус) последних подшагов, [0] — самый свежий. Точки считаем от
-        // текущего центра игрока, поэтому след едет вместе с ним и не отрывается на беге
+        // След: (угол, радиус) подшагов, [0] — самый свежий; _trailBorn — когда записан
+        // (для остывания). Точки считаем от текущего центра игрока, поэтому след едет
+        // вместе с ним и не отрывается на беге
         private readonly Vector2[] _trail = new Vector2[TrailLength];
+        private readonly float[] _trailBorn = new float[TrailLength];
         private int _trailCount;
 
         public override void SetDefaults()
@@ -70,10 +79,14 @@ namespace SoA.Content.Projectiles
             Projectile.usesLocalNPCImmunity = true;
             Projectile.localNPCHitCooldown = -1;   // один взмах — одно попадание по каждому
             Projectile.extraUpdates = 1;
-            Projectile.timeLeft = SlashUpdates;
+            Projectile.timeLeft = SlashUpdates + LingerUpdates;
         }
 
         private float Progress => MathHelper.Clamp(Age / SlashUpdates, 0f, 1f);
+        private bool Lingering => Age > SlashUpdates;
+
+        // 1 во время удара, дальше царапины гаснут
+        private float MarkFade => Lingering ? MathHelper.Clamp(1f - (Age - SlashUpdates) / LingerUpdates, 0f, 1f) : 1f;
 
         // Медленный старт, быстрая середина, мягкий дохлёст — взмах, а не поворот стрелки
         private static float EaseSlash(float t) => t * t * t * (t * (6f * t - 15f) + 10f);
@@ -99,6 +112,15 @@ namespace SoA.Content.Projectiles
             if (Age == 0f)
                 OnSlashStart();
             Age++;
+
+            // Удар закончен: коготь не режет и не держит руку, царапины просто остывают
+            if (Lingering)
+            {
+                Projectile.friendly = false;
+                Projectile.Center = owner.MountedCenter;
+                Projectile.velocity = Vector2.Zero;
+                return;
+            }
 
             float t = Progress;
             float angle = AngleAt(t);
@@ -151,8 +173,12 @@ namespace SoA.Content.Projectiles
         private void PushTrail(float angle, float reach)
         {
             for (int i = Math.Min(_trailCount, TrailLength - 1); i > 0; i--)
+            {
                 _trail[i] = _trail[i - 1];
+                _trailBorn[i] = _trailBorn[i - 1];
+            }
             _trail[0] = new Vector2(angle, reach);
+            _trailBorn[0] = Age;
             _trailCount = Math.Min(_trailCount + 1, TrailLength);
         }
 
@@ -212,48 +238,116 @@ namespace SoA.Content.Projectiles
                 return false;
 
             SpriteBatch sb = Main.spriteBatch;
-            Player owner = Main.player[Projectile.owner];
-            Vector2 center = owner.MountedCenter;
-            float t = Progress;
-            float lifeFade = t < 0.85f ? 1f : (1f - t) / 0.15f;
-            float spacing = MarkSpacing * (Heavy ? 1.25f : 1f);
+            Vector2 center = Main.player[Projectile.owner].MountedCenter;
+            float fade = MarkFade;
+
+            // Тёмная подложка под царапинами — обычным смешиванием, до свечения
+            if (_trailCount > 1)
+                DrawClawMarks(sb, center, fade, MarkLayer.Scorch);
 
             SoAVfx.BeginAdditive(sb);
-
-            // Три следа когтей: раскалённая голова, остывающий красный хвост
-            for (int mark = -1; mark <= 1; mark++)
+            if (_trailCount > 1)
             {
-                for (int i = 0; i < _trailCount - 1; i++)
-                {
-                    Vector2 a = TrailPoint(center, _trail[i], mark * spacing);
-                    Vector2 b = TrailPoint(center, _trail[i + 1], mark * spacing);
-                    float along = i / (float)(TrailLength - 1); // 0 — голова, 1 — хвост
-                    Color color = TrailColor(along) * ((1f - along) * lifeFade);
-                    float width = MathHelper.Lerp(Heavy ? 9f : 7f, 1.5f, along) * (mark == 0 ? 1.15f : 0.85f);
-                    Vector2 segment = b - a;
-                    SoAVfx.DrawTintedQuad(sb, (a + b) * 0.5f, new Vector2(segment.Length() + 3f, width),
-                        segment.ToRotation(), color);
-                }
+                DrawClawMarks(sb, center, fade, MarkLayer.Glow);
+                DrawClawMarks(sb, center, fade, MarkLayer.Core);
             }
 
-            // Жар вокруг когтя и его светящийся двойник под спрайтом
-            Vector2 tip = TrailPoint(center, _trail[0], 0f);
-            SoAVfx.DrawTintedGlow(sb, tip, new Vector2(Heavy ? 120f : 85f), LavaOrange * (0.55f * lifeFade));
-            DrawClaw(sb, center, LavaOrange * (0.5f * lifeFade), 1.12f);
-
+            // Жар вокруг когтя и его светящийся двойник под спрайтом — только пока идёт удар
+            if (!Lingering)
+            {
+                Vector2 tip = TrailPoint(center, _trail[0], 0f);
+                SoAVfx.DrawTintedGlow(sb, tip, new Vector2(Heavy ? 120f : 85f), LavaOrange * 0.55f);
+                DrawClaw(sb, center, LavaOrange * 0.5f, 1.12f);
+            }
             SoAVfx.EndAdditive(sb);
 
             // Сам коготь — раскалённый, свет мира ему не нужен
-            DrawClaw(sb, center, Color.White * lifeFade, 1f);
+            if (!Lingering)
+                DrawClaw(sb, center, Color.White, 1f);
             return false;
+        }
+
+        private enum MarkLayer { Scorch, Glow, Core }
+
+        // Три царапины когтей. Каждая — веретено: острая на концах, толстая в середине.
+        // Средняя — во всю дугу, крайние короче и начинаются позже, к концу все три расходятся
+        // веером. Цвет — по возрасту участка: свежий белый, затем оранжевый, остывший красный
+        private void DrawClawMarks(SpriteBatch sb, Vector2 center, float fade, MarkLayer layer)
+        {
+            float spacing = MarkSpacing * (Heavy ? 1.25f : 1f);
+            float maxWidth = Heavy ? MarkWidthHeavy : MarkWidth;
+            int last = _trailCount - 1;
+
+            for (int mark = -1; mark <= 1; mark++)
+            {
+                // Где на дуге (0 — начало, 1 — коготь) лежит эта царапина
+                float from = mark == 0 ? 0f : 0.14f;
+                float to = mark == 0 ? 1f : 0.9f;
+                float markWidth = maxWidth * (mark == 0 ? 1.15f : 0.85f);
+                Vector2 head = Vector2.Zero;
+                float headHeat = 0f;
+
+                for (int i = 0; i < last; i++)
+                {
+                    float sA = 1f - i / (float)last;         // i — новее, ближе к когтю
+                    float sB = 1f - (i + 1) / (float)last;
+                    float uA = (sA - from) / (to - from);
+                    float uB = (sB - from) / (to - from);
+                    if ((uA < 0f && uB < 0f) || (uA > 1f && uB > 1f))
+                        continue;
+                    uA = MathHelper.Clamp(uA, 0f, 1f);
+                    uB = MathHelper.Clamp(uB, 0f, 1f);
+
+                    Vector2 a = TrailPoint(center, _trail[i], mark * spacing * (1f - MarkFan + MarkFan * uA));
+                    Vector2 b = TrailPoint(center, _trail[i + 1], mark * spacing * (1f - MarkFan + MarkFan * uB));
+                    float u = (uA + uB) * 0.5f;
+                    float profile = (float)Math.Pow(Math.Sin(u * MathHelper.Pi), 0.6);
+                    float width = markWidth * profile;
+                    if (width < 0.4f)
+                        continue;
+
+                    float heat = 1f - MathHelper.Clamp((Age - _trailBorn[i]) / CoolUpdates, 0f, 1f);
+                    if (uA >= 0.999f || head == Vector2.Zero)
+                    {
+                        head = a;
+                        headHeat = heat;
+                    }
+
+                    Vector2 segment = b - a;
+                    float length = segment.Length() + 3f;
+                    float rotation = segment.ToRotation();
+                    Vector2 middle = (a + b) * 0.5f;
+
+                    switch (layer)
+                    {
+                        case MarkLayer.Scorch:
+                            SoAVfx.DrawTintedQuad(sb, middle, new Vector2(length, width * 1.7f), rotation,
+                                ScorchColor * (0.4f * fade));
+                            break;
+                        case MarkLayer.Glow:
+                            SoAVfx.DrawTintedQuad(sb, middle, new Vector2(length, width * 1.3f), rotation,
+                                MarkColor(heat) * (0.85f * fade));
+                            break;
+                        default:
+                            SoAVfx.DrawTintedQuad(sb, middle, new Vector2(length, width * 0.4f), rotation,
+                                HotWhite * ((float)Math.Pow(heat, 1.5) * fade));
+                            break;
+                    }
+                }
+
+                // Искра на кончике каждой царапины, пока он свежий
+                if (layer == MarkLayer.Core && head != Vector2.Zero && headHeat > 0.05f)
+                    SoAVfx.DrawTintedGlow(sb, head, new Vector2(18f + 10f * headHeat), HotWhite * (headHeat * fade));
+            }
         }
 
         private static Vector2 TrailPoint(Vector2 center, Vector2 sample, float radiusOffset)
             => center + sample.X.ToRotationVector2() * (sample.Y + radiusOffset);
 
-        private static Color TrailColor(float along) => along < 0.35f
-            ? Color.Lerp(HotWhite, LavaOrange, along / 0.35f)
-            : Color.Lerp(LavaOrange, DeepRed, (along - 0.35f) / 0.65f);
+        // Остывание: 1 — только что прочерчен (белый), 0 — остыл (тёмно-красный)
+        private static Color MarkColor(float heat) => heat > 0.6f
+            ? Color.Lerp(LavaOrange, HotWhite, (heat - 0.6f) / 0.4f)
+            : Color.Lerp(DeepRed, LavaOrange, heat / 0.6f);
 
         // Коготь в кисти: запястье на руке, кончики — по направлению взмаха
         private void DrawClaw(SpriteBatch sb, Vector2 center, Color color, float scaleMult)
