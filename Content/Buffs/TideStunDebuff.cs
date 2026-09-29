@@ -8,10 +8,6 @@ using SoA.Common.Graphics;
 
 namespace SoA.Content.Buffs
 {
-    // Оглушение приливом: копьё приливного рывка (полная шкала, ПКМ) вбивает цель на
-    // месте. ИИ стоит, контактного урона нет, над головой кружат водяные искры.
-    // Через бафф, а не через своё поле: NPC.AddBuff с клиента сам уходит пакетом на
-    // сервер, а ИИ NPC в мультиплеере крутится именно там.
     public class TideStunDebuff : ModBuff
     {
         public const int NormalTicks = 180;

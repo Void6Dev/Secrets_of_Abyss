@@ -26,6 +26,13 @@ namespace SoA.Common.Systems.TideOcean
         private const int SealRectWidth = 20;
         private const int SealRectHeight = 10;
 
+        // Полка галеона уже есть в профиле дна; здесь с неё только снимается шум рельефа.
+        // Скат короткий: длинный срезал бы соседние склоны и делал их круче
+        private const int ShipTerraceHalfWidth = 40;
+        private const int ShipTerraceRamp = 8;
+        private const int ShipTerraceSandDepth = 5;
+        private const int ShipMinHullDepth = 34;
+
         // Площадка затонувшего галеона: пасс корабля берёт её вместо своего сканирования
         public static int ShipAnchorX { get; private set; }
         public static int ShipAnchorFloorY { get; private set; }
@@ -156,16 +163,17 @@ namespace SoA.Common.Systems.TideOcean
         private void ShapeArenaAndShaft()
         {
             // Спуск начинается с котловины у подножия склона. Игрок идёт от берега
-            // по шельфу, сваливается по уступам и упирается ровно в неё — маршрут
+            // по шельфу, спускается мимо полки галеона и упирается ровно в неё — маршрут
             // читается рельефом, а не подсказкой
+            // Полуширина 46 выравнивала 92 столбца при склоне в 96: арена вместе
+            // с террасой галеона стирала склон целиком
+            int half = 34;
+            // Арена не заходит на склон рифа: иначе она срезала его в стену до самого гребня
+            int reefFootGx = ReefFootGx;
             int gxCenter = _deepestFlatGx > 0
-                ? Math.Clamp(_deepestFlatGx, ShellThickness + 50, _shoreGx - 50)
+                ? Math.Clamp(_deepestFlatGx, Math.Max(ShellThickness + 50, reefFootGx + half), _shoreGx - 50)
                 : (int)(_shoreGx * 0.52f);
             _arenaShaftGx = gxCenter;
-            // Полуширина 46 выравнивала 92 столбца при склоне в 96: арена вместе
-            // с террасой галеона стирала лестницу уступов целиком, и спуск
-            // превращался в один прямой съезд между двумя выглаженными площадками
-            int half = 34;
             int from = Math.Max(ShellThickness + 4, gxCenter - half);
             int to = Math.Min(_shoreGx - 6, gxCenter + half);
 
@@ -245,49 +253,39 @@ namespace SoA.Common.Systems.TideOcean
                 return;   // подходящей глубины нет — пусть пасс корабля ищет сам
 
             _shipTerraceGx = gxCenter;
-            // Галеон ложится на уступ склона и слегка его расширяет, а не срезает
-            // весь склон под себя: ширина террасы соизмерима с полкой, а не со склоном
-            int half = 20;
-            int from = Math.Max(ShellThickness + 4, gxCenter - half);
-            int to = Math.Min(_shoreGx - 6, gxCenter + half);
-
             int floorGy = _seaFloorGy[Math.Clamp(gxCenter, 0, _seaFloorGy.Length - 1)];
+
+            // Полка врезана в склон: в середине ровно, по краям скаты к настоящему дну.
+            // Выше по склону порода срезается, ниже — насыпается до самого дна. Прежняя
+            // плита в 14 тайлов на одной высоте висела над склоном, и под носом корабля
+            // оставались ступенька и пустоты
+            int from = Math.Max(ShellThickness + 4, gxCenter - ShipTerraceHalfWidth - ShipTerraceRamp);
+            int to = Math.Min(_shoreGx - 6, gxCenter + ShipTerraceHalfWidth + ShipTerraceRamp);
             for (int gx = from; gx <= to; gx++)
             {
-                for (int gy = _gWater; gy < floorGy; gy++)
+                int fromCenter = Math.Abs(gx - gxCenter);
+                float flatness = 1f - TideNoise.SmoothStep(ShipTerraceHalfWidth,
+                    ShipTerraceHalfWidth + ShipTerraceRamp, fromCenter);
+                int originalGy = _seaFloorGy[gx];
+                int shapedGy = (int)MathF.Round(TideNoise.Lerp(originalGy, floorGy, flatness));
+
+                for (int gy = _gWater; gy < shapedGy; gy++)
                     CarveIfAllowed(gx, gy, TideGrid.Water);
-                for (int gy = floorGy; gy <= floorGy + 14; gy++)
-                    _grid.Set(gx, gy, gy < floorGy + 5 ? TideGrid.Sand : TideGrid.Stone);
-                _seaFloorGy[gx] = floorGy;
+                for (int gy = shapedGy; gy <= Math.Max(shapedGy, originalGy) + ShipTerraceSandDepth; gy++)
+                    _grid.Set(gx, gy, gy < shapedGy + ShipTerraceSandDepth ? TideGrid.Sand : TideGrid.Stone);
+                _seaFloorGy[gx] = shapedGy;
             }
 
             ShipAnchorX = _grid.ToWorldX(gxCenter);
             ShipAnchorFloorY = _grid.ToWorldY(floorGy);
         }
 
-        // Самая глубокая ровная площадка, кроме арены Краба: корпусу нужно уйти
-        // под воду целиком, а лечь он может только на полку, но не на сброс
+        // Полка галеона заложена в раскладку моря (LayOutSea) между двумя склонами,
+        // поэтому искать её не нужно — только убедиться, что корпус уйдёт под воду
         private int ChooseShipBasin()
         {
-            const int MinHullDepth = 34;
-            int best = -1, bestDepth = 0;
-
-            foreach (int terraceGx in _terraceGx)
-            {
-                if (terraceGx < 40 || terraceGx >= _seaFloorGy.Length - 40)
-                    continue;
-                if (Math.Abs(terraceGx - _arenaShaftGx) < 80)
-                    continue;
-
-                int depth = _seaFloorGy[terraceGx] - _gWater;
-                if (depth > bestDepth)
-                {
-                    bestDepth = depth;
-                    best = terraceGx;
-                }
-            }
-
-            return bestDepth >= MinHullDepth ? best : -1;
+            int gx = Math.Clamp(_shipLedgeGx, 0, _seaFloorGy.Length - 1);
+            return _seaFloorGy[gx] - _gWater >= ShipMinHullDepth ? gx : -1;
         }
 
         // Мембрана и замок ставятся последним проходом по готовому миру: до этого
@@ -656,7 +654,8 @@ namespace SoA.Common.Systems.TideOcean
             ushort tidesandType = (ushort)ModContent.TileType<Tidesand_tile>();
             ushort tidestoneType = (ushort)ModContent.TileType<Tidestone_tile>();
 
-            int gx = (int)(_shoreGx * BandCliff) + 6;
+            // Ламинария не растёт сквозь руины волнолома — начинаем за ними
+            int gx = Math.Max((int)(_shoreGx * BandCliff) + 6, _breakwaterEndGx + 4);
             int limit = _shoreGx - BeachWidth + 8;
             int strands = 0;
 

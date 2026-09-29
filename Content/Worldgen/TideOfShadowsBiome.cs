@@ -58,6 +58,21 @@ namespace SoA.Content.Worldgen
             return 0;
         }
 
+        // Непрерывная глубина: 0 — зеркало воды, 1 — дно зоны I, ... 5 — дно Бездны.
+        // Дробная часть — доля пройденной зоны, по ней атмосфера перетекает между зонами
+        // без скачка на границе. Над водой 0, вне биома -1
+        public static float DepthLevelAt(int tileX, int tileY)
+        {
+            int zone = ZoneAt(tileX, tileY);
+            if (zone == 0)
+                return -1f;
+
+            int zoneTop = zone == 1 ? WaterTopY : ZoneBottomY[zone - 2];
+            int zoneBottom = ZoneBottomY[zone - 1];
+            float fraction = (tileY - zoneTop) / (float)Math.Max(1, zoneBottom - zoneTop);
+            return zone - 1 + Math.Clamp(fraction, 0f, 1f);
+        }
+
         public override void ClearWorld()
         {
             OceanSide = 0;
@@ -236,6 +251,10 @@ namespace SoA.Content.Worldgen
         public override int BiomeCampfireItemType => ModContent.ItemType<Tcampfire>();
         // BiomeHigh: иначе ванильный океан перебивает наш задний фон у побережья
         public override SceneEffectPriority Priority => SceneEffectPriority.BiomeHigh;
+
+        // ВРЕМЕННО: ИИ-заглушка верхней зоны, пока не найден композитор. Играет на весь биом.
+        // Петля (вступление играет один раз) задана тегами LOOPSTART/LOOPEND внутри .ogg
+        public override int Music => MusicLoader.GetMusicSlot(Mod, "Assets/Music/DuskResolve");
 
         public override bool IsBiomeActive(Player player)
         {

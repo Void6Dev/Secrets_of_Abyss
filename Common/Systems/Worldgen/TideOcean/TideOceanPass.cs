@@ -34,7 +34,9 @@ namespace SoA.Common.Systems.TideOcean
         private const int SurfaceHeadroom = 64;   // небо над зеркалом воды под скалы и утёс
         private const int ShellThickness = 10;    // герметичная оболочка по краю следа
         private const int InlandRoofMargin = 26;  // порода между ванильной поверхностью и сводом
-        private const float SurfaceWidthScale = 1.55f;
+        // Ширина под содержимое моря (см. LayOutSea): пляж, шельф, склоны, полка галеона,
+        // котловина с ареной и риф. На 1.15 это не влезало, и склоны сжимались в обрывы
+        private const float SurfaceWidthScale = 1.6f;
         private const float DeepWidthScale = 2.30f;
 
         // --- Бюджет глубины ---
@@ -50,26 +52,43 @@ namespace SoA.Common.Systems.TideOcean
         // Прежние зоны 1 и 2 (шельф и котловина) слиты в одну: это одна и та же
         // открытая вода, и делить её границей было нечем — печати там не стояло
         private const float ZonePortBottom = 0.18f;       // дно котловины, ниже начинаются пещеры
+        // Доля бюджета на большом мире давала от 130 до 200+ тайлов моря — в зависимости
+        // от того, где лёг слой камня. Раскладка моря (LayOutSea) рассчитана на ~140;
+        // всё, что глубже, отдаётся Чёрным лесам
+        private const int MaxSeaDepth = 140;
         private const float ZoneForestBottom = 0.40f;     // дно зала с ламинарией
         private const float ZoneCityBottom = 0.60f;       // дно провала с городом
         private const float ZoneRiftBottom = 0.80f;       // дно траншеи, ниже только Бездна
 
         // --- Открытое море: шельф, перегиб, лестница уступов, котловина ---
-        private const float BandCliff = 0.16f;            // доля ширины под великий утёс
-        private const int BeachWidth = 104;               // сухой берег от уреза воды вглубь суши
+        private const float BandCliff = 0.07f;            // доля ширины под риф волнолома у края мира
+        private const int BeachWidth = 72;                // сухой берег от уреза воды вглубь суши
         // Высота задана в тайлах, а не долей бюджета: доля растёт вместе с глубиной
         // бездны, и на большом мире пляж поднимался на 59 тайлов — то есть плато
         private const int BeachCrestHeight = 22;          // дюны над зеркалом воды
+        private const int DuneFadeInWidth = 24;           // за столько столбцов от уреза дюны набирают полную высоту
 
-        private const float ShelfRun = 0.44f;             // доля разбега моря под шельф
-        private const float BasinRun = 0.18f;             // доля разбега моря под котловину
+        // Подъём пляжа к настоящей высоте суши на линии берега
+        private const int LandSampleSpan = 8;             // столбцов суши, по которым меряется её высота
+        private const int MinShoreFreeboard = 3;          // суша не ниже этого над зеркалом воды
+        private const float LandRampRunPerTile = 2.5f;    // столбцов подъёма на тайл разницы высот
+        private const int MinLandRampWidth = 24;
+        private const int MaxLandRampWidth = 90;
+
+        // Раскладка моря в тайлах (LayOutSea). Числа подобраны под большой мир:
+        // глубина моря ~130, галеон 128x83 — мачты уходят под воду с полки на 92
+        private const int ShelfWidth = 50;                // шельф от уреза до кромки
         private const int ShelfBreakDepth = 35;           // глубина у внешней кромки шельфа
+        private const float SlopeGradient = 0.8f;         // средний уклон склонов: ~40°, в середине S-кривой ~50°
+        private const int ShipLedgeWidth = 80;            // полка галеона: днище скруглено, 80 из 128 хватает
+        private const int ShipLedgeDepth = 92;
+        private const int ShipLedgeBasinGap = 25;         // полка не ниже котловины минус столько
+        private const int BasinMinWidth = 80;             // арена Краба занимает 68
+        private const float MinSlopeStretch = 0.5f;       // склоны не сжимаются круче двойного уклона
+        private const float MaxSlopeStretch = 1.6f;
+        private const int ShelfBreakLandmarkInset = 12;   // площадка ориентира чуть мельче кромки
         private const int ShelfBarHeight = 9;             // насколько песчаная гряда поднимает дно
-        private const int ShelfMaxSlope = 2;              // предел падения дна на столбец в пределах шельфа
-        // Четыре уступа, а не пять: на пять полка выходит в десяток тайлов шириной,
-        // то есть карниз, а не площадка, на которой можно стоять и драться
-        private const int SlopeBenches = 4;               // полок на склоне между кромкой и котловиной
-        private const float BenchTreadShare = 0.62f;      // какая доля склона уходит под горизонтальные полки
+        private const int ShelfMaxSlope = 2;              // предел падения дна на столбец по всему морю
 
         // Кекуры: высота над водой связана с шириной, а основание — с местной глубиной.
         // Прежние надводные скалы задавали гребень абсолютно (_gWater минус случайные
@@ -77,9 +96,13 @@ namespace SoA.Common.Systems.TideOcean
         private const int StackMaxDepth = 30;             // глубже кекур не ставим
         private const float StackHeightToWidth = 0.45f;   // предел надводной части к ширине
 
-        private const int CliffHeight = 52;          // высота великого утёса над водой
-        private const float CliffTalusReach = 2.6f;  // на сколько ширин полосы растянут осыпной склон
-        private const float CliffTerraces = 4f;      // уступов на склоне: не гладкая наклонная
+        // У края мира вместо горы — низкий риф, остов волнолома затопленного порта:
+        // гребень у самой воды, местами захлёстывается. На нём стоят руины (Breakwater)
+        private const int CliffHeight = 9;           // высота гребня рифа над водой
+        private const float CliffTalusReach = 2.6f;  // на сколько ширин полосы растянут склон рифа от дна котловины
+        private const float CliffTerraces = 2f;      // уступов на склоне: не гладкая наклонная
+        private const float CliffCrestWander = 3f;   // крупная волна гребня, тайлов
+        private const float CliffCrestJitter = 2f;   // мелкие зубцы гребня, тайлов
         private const int DeepRoofThickness = 24;    // порода между дном моря и сводом глубин
         private const int MinDeepCavernHeight = 44;  // высота горла: уже неё зал не пережимается
 
@@ -116,7 +139,10 @@ namespace SoA.Common.Systems.TideOcean
         private bool _hasTemple;
         private Rectangle _templeInner, _templeOuter;
         private readonly List<int> _crestGx = new();     // кромки: перегиб шельфа и верх каждого сброса
-        private readonly List<int> _terraceGx = new();   // ровные площадки: шельф, полки склона, котловина
+        private readonly List<int> _terraceGx = new();   // ровные площадки: шельф, кромка шельфа, котловина
+        // Раскладка моря (LayOutSea): кромка шельфа, полка галеона, верх котловины
+        private int _shelfBreakGx, _ledgeStartGx, _ledgeEndGx, _basinTopGx;
+        private int _ledgeDepth, _shipLedgeGx;
         private int _deepestFlatGx;                      // середина котловины — туда садится арена
         private readonly List<TideSealSite> _sealSites = new();
 
@@ -184,6 +210,8 @@ namespace SoA.Common.Systems.TideOcean
 
             BlendInlandSand();
             BlendInlandRock();
+            RoundOffNeighbourCaves();
+            PlaceBreakwaterRuin();
             DecorateSeabed();
             PlantKelpForests();
             PlantBlackForest();
@@ -197,10 +225,12 @@ namespace SoA.Common.Systems.TideOcean
                 + $"траншея {_trenchTopGy + _topY}..{_topY + _gAbyssBottom}, "
                 + $"Сердце {_grid.ToWorldX(_heartGx)},{_topY + _heartGy} ({_heartWidth}x{_heartHeight})");
 
-            int minX = Math.Min(_edgeX, _edgeX + _deepWidth * _dir);
-            int maxX = Math.Max(_edgeX, _edgeX + _deepWidth * _dir);
+            // Рамка шире следа на полосу стыка: там скруглялись ванильные пещеры
+            int minX = Math.Min(_edgeX, _grid.ToWorldX(_grid.Width - 1)) - CaveRoundingReach;
+            int maxX = Math.Max(_edgeX, _grid.ToWorldX(_grid.Width - 1)) + CaveRoundingReach;
             WorldGen.RangeFrame(Math.Max(12, minX), Math.Max(20, _topY),
-                Math.Min(Main.maxTilesX - 12, maxX), Math.Min(Main.maxTilesY - 20, _abyssBottomY + ShellThickness));
+                Math.Min(Main.maxTilesX - 12, maxX),
+                Math.Min(Main.maxTilesY - 20, _grid.ToWorldY(_grid.Height - 1) + CaveRoundingReach));
             progress.Value = 1f;
         }
 
@@ -265,7 +295,7 @@ namespace SoA.Common.Systems.TideOcean
 
             _topY = Math.Max(30, _waterTopY - SurfaceHeadroom);
             _gWater = _waterTopY - _topY;
-            _gPortBottom = _gWater + (int)(_depthBudget * ZonePortBottom);
+            _gPortBottom = _gWater + Math.Min((int)(_depthBudget * ZonePortBottom), MaxSeaDepth);
             _gForestBottom = _gWater + (int)(_depthBudget * ZoneForestBottom);
             _gCityBottom = _gWater + (int)(_depthBudget * ZoneCityBottom);
             _gRiftBottom = _gWater + (int)(_depthBudget * ZoneRiftBottom);
@@ -285,14 +315,19 @@ namespace SoA.Common.Systems.TideOcean
         }
 
         // Ванильный рельеф запоминаем до того, как монолит его затрёт:
-        // по нему считается глубина свода под сушей
+        // по нему считается глубина свода под сушей.
+        // Поиск идёт от верха сетки, а не от неба: пасс работает после Final Cleanup,
+        // и скан с y=30 находил летающий остров. Высота выходила выше сетки,
+        // столбец целиком пропускался, и через весь биом шла полоса ванильной породы,
+        // по которой резался зал без оболочки
         private void CacheVanillaSurface()
         {
             _vanillaSurfaceGy = new int[_grid.Width];
             for (int gx = 0; gx < _grid.Width; gx++)
             {
                 int x = _grid.ToWorldX(gx);
-                _vanillaSurfaceGy[gx] = x < 12 || x >= Main.maxTilesX - 12 ? -1 : FindSurface(x) - _topY;
+                int surfaceY = x < 12 || x >= Main.maxTilesX - 12 ? -1 : FindSurface(x, _topY);
+                _vanillaSurfaceGy[gx] = surfaceY == -1 ? -1 : surfaceY - _topY;
             }
         }
 
@@ -380,13 +415,13 @@ namespace SoA.Common.Systems.TideOcean
             _crestGx.Clear();
             _terraceGx.Clear();
 
-            int seaStart = (int)(_shoreGx * BandCliff) + 6;   // подножие великого утёса
+            int seaStart = (int)(_shoreGx * BandCliff) + 6;   // подножие рифа
             int seaEnd = _shoreGx - BeachWidth;               // урез воды
-            int run = Math.Max(60, seaEnd - seaStart);
-            int shelfBreakGx = seaEnd - (int)(run * ShelfRun);
             int seaDepth = Math.Max(60, _gPortBottom - _gWater);
 
-            var nodes = BuildShelfNodes(seaStart, seaEnd, run, seaDepth);
+            LayOutSea(seaEnd, seaDepth);
+            int shelfBreakGx = _shelfBreakGx;
+            var nodes = BuildShelfNodes(seaStart, seaEnd, seaDepth);
 
             for (int gx = 0; gx <= _shoreGx && gx < _grid.Width; gx++)
             {
@@ -410,18 +445,67 @@ namespace SoA.Common.Systems.TideOcean
                 }
 
                 // Дюнные гряды на сухом берегу: две частоты, чтобы читались и крупные
-                // валы, и мелкая рябь между ними
+                // валы, и мелкая рябь между ними. От уреза дюны нарастают постепенно:
+                // включённые сразу, они ставили у кромки воды ступеньку до 12 тайлов
                 if (gx > seaEnd)
-                    relief -= TideNoise.Fbm(gx * 0.028f, ChDetail + 5, 3) * 9f
-                            + TideNoise.Fbm(gx * 0.105f, ChDetail + 9, 2) * 3.5f;
+                {
+                    float duneFade = TideNoise.SmoothStep(seaEnd, seaEnd + DuneFadeInWidth, gx);
+                    relief -= (TideNoise.Fbm(gx * 0.028f, ChDetail + 5, 3) * 9f
+                             + TideNoise.Fbm(gx * 0.105f, ChDetail + 9, 2) * 3.5f) * duneFade;
+                }
 
                 float floor = _gWater + depth + relief;
                 _seaFloorGy[gx] = (int)TideNoise.SoftMin(floor, _gPortBottom - 8, 16f);
             }
 
-            // Гладкость нужна только шельфу: лестница уступов ниже кромки обязана
-            // оставаться лестницей, и общий предел уклона срезал бы ей сбросы
-            LimitSeaFloorSlope(shelfBreakGx, seaEnd, ShelfMaxSlope);
+            BlendBeachIntoLand(seaEnd);
+
+            // Предел уклона на всё море, от подножия рифа до уреза: отдельный выброс
+            // шума на склоне иначе даёт стенку, которую не спишешь на рельеф
+            LimitSeaFloorSlope(seaStart, seaEnd, ShelfMaxSlope);
+        }
+
+        // Гребень дюн стоит на фиксированной высоте, а суша за ним — на какой угодно,
+        // и на линии берега выходила ступенька или стенка. Хвост пляжа подводится
+        // к настоящей высоте суши; чем больше разница, тем длиннее подъём
+        private void BlendBeachIntoLand(int seaEnd)
+        {
+            int landGy = SampleLandHeightGy();
+            if (landGy < 0 || _shoreGx >= _seaFloorGy.Length)
+                return;
+
+            // Ниже бортика над водой сушу не опускаем: иначе море перельётся на берег
+            landGy = Math.Min(landGy, _gWater - MinShoreFreeboard);
+
+            int gap = Math.Abs(landGy - _seaFloorGy[_shoreGx]);
+            int maxRamp = Math.Max(MinLandRampWidth, _shoreGx - seaEnd - 10);
+            int rampWidth = Math.Clamp((int)(gap * LandRampRunPerTile), MinLandRampWidth,
+                Math.Min(MaxLandRampWidth, maxRamp));
+            int fromGx = _shoreGx - rampWidth;
+
+            for (int gx = Math.Max(0, fromGx); gx <= _shoreGx; gx++)
+            {
+                float t = TideNoise.SmoothStep(fromGx, _shoreGx, gx);
+                _seaFloorGy[gx] = (int)MathF.Round(TideNoise.Lerp(_seaFloorGy[gx], landGy, t));
+            }
+        }
+
+        // Высота суши сразу за линией берега. Берётся медиана: одна яма или
+        // бугор у самого шва не должны задавать высоту всему подъёму
+        private int SampleLandHeightGy()
+        {
+            var samples = new List<int>(LandSampleSpan);
+            for (int gx = _shoreGx + 1; gx <= _shoreGx + LandSampleSpan && gx < _vanillaSurfaceGy.Length; gx++)
+            {
+                if (_vanillaSurfaceGy[gx] >= 0)
+                    samples.Add(_vanillaSurfaceGy[gx]);
+            }
+
+            if (samples.Count == 0)
+                return -1;
+
+            samples.Sort();
+            return samples[samples.Count / 2];
         }
 
         // Жёсткий предел уклона дна на отрезке: два встречных прохода срезают всё,
@@ -440,68 +524,59 @@ namespace SoA.Common.Systems.TideOcean
                 _seaFloorGy[gx] = Math.Min(_seaFloorGy[gx], _seaFloorGy[gx + 1] + limit);
         }
 
-        // Узлы профиля от берега к краю мира: пляж, шельф, лестница уступов, котловина
-        private List<ProfileNode> BuildShelfNodes(int seaStart, int seaEnd, int run, int seaDepth)
+        // Раскладка моря в тайлах, от уреза к краю мира: шельф, верхний склон, полка
+        // галеона, нижний склон, котловина с ареной, склон рифа. Ширины считаются от
+        // содержимого, а не долями моря: доли не знали, что полке нужно 80 столбцов,
+        // арене 68, и всё, что не влезало, сжималось в обрывы. Если моря не хватает,
+        // жмутся только склоны — и это пишется в лог
+        private void LayOutSea(int seaEnd, int seaDepth)
         {
-            int shelfBreakGx = seaEnd - (int)(run * ShelfRun);
-            int basinTopGx = seaStart + (int)(run * BasinRun);
+            int ledgeDepth = Math.Min(ShipLedgeDepth, seaDepth - ShipLedgeBasinGap);
+            float upperRun = (ledgeDepth - ShelfBreakDepth) / SlopeGradient;
+            float lowerRun = (seaDepth - ledgeDepth) / SlopeGradient;
 
+            int reefFootGx = ReefFootGx;
+            int fixedWidth = ShelfWidth + ShipLedgeWidth + BasinMinWidth;
+            float slopeRoom = seaEnd - reefFootGx - fixedWidth;
+            float stretch = MathHelper.Clamp(slopeRoom / (upperRun + lowerRun), MinSlopeStretch, MaxSlopeStretch);
+            if (stretch < 0.95f)
+                Log($"море узко для раскладки: склоны сжаты до {stretch:0.00} (не хватает {(int)(upperRun + lowerRun - slopeRoom)} столбцов)");
+
+            _shelfBreakGx = seaEnd - ShelfWidth;
+            _ledgeStartGx = _shelfBreakGx - (int)(upperRun * stretch);
+            _ledgeEndGx = _ledgeStartGx - ShipLedgeWidth;
+            _basinTopGx = _ledgeEndGx - (int)(lowerRun * stretch);
+            _ledgeDepth = ledgeDepth;
+            _shipLedgeGx = (_ledgeStartGx + _ledgeEndGx) / 2;
+            _deepestFlatGx = (_basinTopGx + reefFootGx) / 2;
+
+            Log($"раскладка моря: урез {seaEnd}, кромка шельфа {_shelfBreakGx}, полка {_ledgeStartGx}..{_ledgeEndGx} "
+                + $"на глубине {ledgeDepth}, котловина {_basinTopGx}..{reefFootGx} на {seaDepth}, склоны x{stretch:0.00}");
+        }
+
+        // Узлы профиля от берега к краю мира по готовой раскладке (LayOutSea)
+        private List<ProfileNode> BuildShelfNodes(int seaStart, int seaEnd, int seaDepth)
+        {
             // Пляж — не полка на одной высоте, а уклон от дюн к урезу воды.
             // Показатель 1.5 делает его вогнутым: у воды почти плоско, вглубь суши круче.
-            // Шельф вогнут так же: у берега почти горизонтально, к кромке чуть круче
+            // Шельф вогнут слабее: при сильной вогнутости он оставался по колено
+            // до самой кромки, и песчаные гряды выходили из воды сплошной сушей
             var nodes = new List<ProfileNode>
             {
                 new() { Gx = _shoreGx, Depth = -BeachCrestHeight, Exponent = 1f },
                 new() { Gx = seaEnd, Depth = -1f, Exponent = 1.5f },
-                new() { Gx = shelfBreakGx, Depth = ShelfBreakDepth, Exponent = 1.8f }
+                new() { Gx = _shelfBreakGx, Depth = ShelfBreakDepth, Exponent = 1.2f },
+                // Верхний склон, полка галеона, нижний склон — каждый переход S-кривой
+                new() { Gx = _ledgeStartGx, Depth = _ledgeDepth, Exponent = 1f },
+                new() { Gx = _ledgeEndGx, Depth = _ledgeDepth + 2, Exponent = 1f },
+                new() { Gx = _basinTopGx, Depth = seaDepth, Exponent = 1f }
             };
 
-            _terraceGx.Add((shelfBreakGx + seaEnd) / 2);   // середина шельфа — ровное мелководье
-
-            // Лестница уступов. Полка почти горизонтальна, сброс между полками короток:
-            // отвесный сброс на три десятка тайлов между двумя полками читается обрывом,
-            // а такой же отвес во весь склон читается ошибкой генератора
-            int slopeRun = Math.Max(SlopeBenches * 16, shelfBreakGx - basinTopGx);
-            int treadTotal = (int)(slopeRun * BenchTreadShare);
-            int riserTotal = slopeRun - treadTotal;
-
-            var weights = new float[SlopeBenches];
-            float weightSum = 0f;
-            for (int i = 0; i < SlopeBenches; i++)
-            {
-                weights[i] = WorldGen.genRand.NextFloat(0.7f, 1.35f);
-                weightSum += weights[i];
-            }
-
-            int cursorGx = shelfBreakGx;
-            float cursorDepth = ShelfBreakDepth;
-            float dropLeft = seaDepth - ShelfBreakDepth;
-
-            for (int i = 0; i < SlopeBenches; i++)
-            {
-                float part = weights[i] / weightSum;
-                _crestGx.Add(cursorGx);   // кромка уступа: под ней нависает карниз
-
-                int riser = Math.Max(5, (int)(riserTotal * part));
-                cursorGx = Math.Max(basinTopGx, cursorGx - riser);
-                cursorDepth += dropLeft * part;
-                nodes.Add(new ProfileNode { Gx = cursorGx, Depth = cursorDepth, Exponent = 1f });
-
-                int tread = Math.Max(10, (int)(treadTotal * part));
-                cursorGx = Math.Max(basinTopGx, cursorGx - tread);
-                _terraceGx.Add(cursorGx + tread / 2);
-                nodes.Add(new ProfileNode
-                {
-                    Gx = cursorGx,
-                    Depth = cursorDepth + WorldGen.genRand.Next(-2, 3),
-                    Exponent = 1f
-                });
-            }
-
-            // Котловина: ровное дно, туда садится арена Краба
-            nodes.Add(new ProfileNode { Gx = basinTopGx, Depth = seaDepth, Exponent = 1.2f });
-            _deepestFlatGx = (basinTopGx + seaStart) / 2;
+            _terraceGx.Add((_shelfBreakGx + seaEnd) / 2);   // середина шельфа — ровное мелководье
+            _terraceGx.Add(_shelfBreakGx + ShelfBreakLandmarkInset); // край шельфа у кромки — там глубже всего на шельфе
             _terraceGx.Add(_deepestFlatGx);
+            _crestGx.Add(_shelfBreakGx);   // кромки: под ними нависает карниз
+            _crestGx.Add(_ledgeEndGx);
 
             // Профиль обязан дойти до самой оболочки. За последним узлом SampleProfile
             // возвращает константу, и дно раскатывается в плоскую плиту на всю ширину
@@ -554,6 +629,9 @@ namespace SoA.Common.Systems.TideOcean
             return TideNoise.Clamp01(raw + wobble);
         }
 
+        // Где кончается склон рифа и начинается ровное дно котловины
+        private int ReefFootGx => Math.Max(ShellThickness, (int)(_shoreGx * BandCliff * CliffTalusReach));
+
         // Верх породы в столбце: дно моря вдали от утёса, гребень у края мира,
         // между ними — осыпной склон уступами
         private int CliffRockTopGyAt(int gx, int floorGy, float blend)
@@ -570,13 +648,13 @@ namespace SoA.Common.Systems.TideOcean
             return (int)TideNoise.Lerp(floorGy, CliffCrestGyAt(gx), shape);
         }
 
-        // Гребень утёса у самого края мира: вырезы и контрфорсы даёт гребневой шум
+        // Гребень рифа у самого края мира: вырезы и контрфорсы даёт гребневой шум
         private int CliffCrestGyAt(int gx)
         {
             float crest = _gWater
                         - CliffHeight * (0.5f + 0.5f * TideNoise.Ridged(gx * 0.055f, ChCliff, 3))
-                        - TideNoise.Signed(gx * 0.017f, ChCliff + 5, 4) * 13f
-                        - TideNoise.Signed(gx * 0.085f, ChCliff + 9, 2) * 5f;
+                        - TideNoise.Signed(gx * 0.017f, ChCliff + 5, 4) * CliffCrestWander
+                        - TideNoise.Signed(gx * 0.085f, ChCliff + 9, 2) * CliffCrestJitter;
             return (int)crest;
         }
 
@@ -762,9 +840,9 @@ namespace SoA.Common.Systems.TideOcean
         private static void Log(string message)
             => ModContent.GetInstance<global::SoA.SoA>()?.Logger.Info("[TideOcean] " + message);
 
-        private static int FindSurface(int x)
+        private static int FindSurface(int x, int startY)
         {
-            for (int y = 30; y < Main.maxTilesY - 200; y++)
+            for (int y = Math.Max(30, startY); y < Main.maxTilesY - 200; y++)
             {
                 Tile tile = Main.tile[x, y];
                 if (tile.HasTile && Main.tileSolid[tile.TileType])

@@ -26,7 +26,7 @@ namespace SoA.Content.Tiles.Nature
             DustType = ModContent.DustType<Sparkle>();
             HitSound = SoundID.Dig;
 
-            AddMapEntry(new Color(60, 72, 154), CreateMapEntryName());
+            AddMapEntry(new Color(47, 52, 174), CreateMapEntryName());
             RegisterItemDrop(ModContent.ItemType<Tidesand>());
         }
 

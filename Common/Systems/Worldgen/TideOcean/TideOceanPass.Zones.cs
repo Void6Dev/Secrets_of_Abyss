@@ -13,7 +13,7 @@ namespace SoA.Common.Systems.TideOcean
         private int _cavernMinHeight, _cavernMaxHeight;
         private bool _cityCarved;
 
-        // Зоны 1-2: открытая вода от зеркала до дна, великий утёс у края мира,
+        // Зоны 1-2: открытая вода от зеркала до дна, риф волнолома у края мира,
         // песчаная шапка на пологих участках и голая скала на уступах
         private void CarveOpenSea()
         {
@@ -58,7 +58,103 @@ namespace SoA.Common.Systems.TideOcean
 
             CarveCrestOverhangs();
             RoughenSlopeFaces();
+            CarveReefFace();
             RaiseSeaStacks();
+        }
+
+        // --- Стена рифа ---
+        // Склон рифа у края мира пологим не сделать: на ~140 тайлов подъёма у моря нет
+        // ширины. Поэтому стена не прячется, а становится местом: мелкие ниши по всей
+        // высоте, подмытые карнизы и несколько гротов, уходящих вглубь рифа
+        private const int ReefFaceTopMargin = 8;       // у самого гребня не режем: там риф тонкий
+        private const int ReefGrottoMinCount = 2;
+        private const int ReefGrottoMaxCount = 4;
+        private const int ReefGrottoShellMargin = 4;   // порода между гротом и оболочкой края мира
+
+        private void CarveReefFace()
+        {
+            int footGx = ReefFootGx;
+            int topGy = _gWater + ReefFaceTopMargin;
+            int bottomGy = FloorAt(footGx) - 4;
+            if (bottomGy - topGy < 20)
+                return;
+
+            for (int gy = topGy; gy < bottomGy; gy += WorldGen.genRand.Next(4, 9))
+            {
+                int faceGx = ReefFaceGxAt(gy, footGx);
+                if (faceGx == -1)
+                    continue;
+
+                float radius = WorldGen.genRand.NextFloat(2.5f, 5.5f);
+                CarveBlob(faceGx - radius * WorldGen.genRand.NextFloat(0.3f, 0.9f), gy, radius,
+                    TideGrid.Water, ChDetail + 101 + gy, 0.45f);
+            }
+
+            CarveReefLedges(topGy, bottomGy, footGx);
+            CarveReefGrottoes(topGy, bottomGy, footGx);
+        }
+
+        // Карнизы: горизонтальный подмыв под выступом. Сверху по ним видно уступ,
+        // а под ним можно спрятаться от течения
+        private void CarveReefLedges(int topGy, int bottomGy, int footGx)
+        {
+            int count = WorldGen.genRand.Next(2, 5);
+            for (int i = 0; i < count; i++)
+            {
+                int gy = WorldGen.genRand.Next(topGy + 6, bottomGy - 6);
+                int faceGx = ReefFaceGxAt(gy, footGx);
+                if (faceGx == -1)
+                    continue;
+
+                int reach = WorldGen.genRand.Next(10, 23);
+                float radius = WorldGen.genRand.NextFloat(2f, 3.5f);
+                CarveTunnel(faceGx + 2, gy, faceGx - reach, gy + WorldGen.genRand.Next(-2, 3),
+                    radius * 0.7f, radius, TideGrid.Water, ChDetail + 131 + i, 0.3f);
+            }
+        }
+
+        // Гроты: камера вглубь рифа с узким устьем. Высота делится на полосы, по гроту
+        // на полосу, чтобы они не слипались в одну пещеру. Декор дна (светящиеся
+        // ракушки, кораллы) садится на их пол сам — отдельно не ставим
+        private void CarveReefGrottoes(int topGy, int bottomGy, int footGx)
+        {
+            int count = WorldGen.genRand.Next(ReefGrottoMinCount, ReefGrottoMaxCount + 1);
+            int band = (bottomGy - topGy) / count;
+
+            for (int i = 0; i < count; i++)
+            {
+                int gy = topGy + band * i + WorldGen.genRand.Next(band / 4, Math.Max(band / 4 + 1, band * 3 / 4));
+                int faceGx = ReefFaceGxAt(gy, footGx);
+                if (faceGx == -1)
+                    continue;
+
+                float radius = WorldGen.genRand.NextFloat(6.5f, 11f);
+                int centerGx = faceGx - WorldGen.genRand.Next(12, 21);
+                // Грот не должен подходить к оболочке: за ней край мира
+                if (centerGx - radius * 1.35f < ShellThickness + ReefGrottoShellMargin)
+                    continue;
+
+                int channel = ChDetail + 151 + i * 7;
+                CarveBlob(centerGx, gy, radius, TideGrid.Water, channel, 0.35f);
+                // Вторая доля делает камеру неровной — один диск читается пузырём
+                CarveBlob(centerGx + WorldGen.genRand.NextFloat(-radius, radius) * 0.6f,
+                    gy + WorldGen.genRand.NextFloat(-radius, radius) * 0.4f,
+                    radius * WorldGen.genRand.NextFloat(0.55f, 0.8f), TideGrid.Water, channel + 3, 0.4f);
+
+                CarveTunnel(faceGx + 2, gy + WorldGen.genRand.Next(-3, 4), centerGx, gy,
+                    3f, 4.5f, TideGrid.Water, channel + 5, 0.3f);
+            }
+        }
+
+        // Столбец, где на глубине gy начинается порода рифа: идём от подножия к краю мира
+        private int ReefFaceGxAt(int gy, int footGx)
+        {
+            for (int gx = Math.Min(footGx, _rockTopGy.Length - 1); gx >= ShellThickness; gx--)
+            {
+                if (_rockTopGy[gx] <= gy)
+                    return gx;
+            }
+            return -1;
         }
 
         // Фактура склона: ниши и карманы в стенках сбросов, осыпь на полках.

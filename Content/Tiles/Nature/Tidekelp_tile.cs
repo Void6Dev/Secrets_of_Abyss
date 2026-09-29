@@ -3,6 +3,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.GameContent;
+using Terraria.GameContent.Drawing;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.Utilities;
@@ -48,15 +49,6 @@ namespace SoA.Content.Tiles.Nature
         public const int SpeciesBush = 2;     // рыжий низкий куст у дна
         public const int SpeciesCount = 3;
 
-        // Дальше этого сегменты одного стебля не считаются: только на размах качания
-        private const int MaxStrandHeight = 30;
-
-        private const float SwaySpeed = 0.013f;
-
-        // Насколько высоко по стеблю передаётся толчок снизу и во сколько раз
-        // сложенные толчки могут превысить одиночный
-        private const int PushReachBelow = 6;
-        private const float MaxPushTurns = 1.8f;
         private const float GlowPulseSpeed = 0.02f;
         private const float GlowPulseDepth = 0.18f;
 
@@ -68,19 +60,24 @@ namespace SoA.Content.Tiles.Nature
         {
             public readonly int MinHeight;
             public readonly int MaxHeight;
-            public readonly float SwayAmplitude;   // размах фонового колыхания
-            public readonly float PushAmplitude;   // наклон в пике от задевшей сущности
+            // Поведение в воде (TideKelpPhysics)
+            public readonly float Buoyancy;        // тяга вверх: выше — быстрее и твёрже встаёт
+            public readonly float BendStiffness;   // 0..1, как сильно сегмент выравнивается по соседям: выше — плавнее дуга
+            public readonly float Pliancy;         // 0..1, насколько стебель увлекает проплывающий
+            public readonly float CurrentResponse; // насколько его колышет течение
             public readonly Vector3 StemGlow;
             public readonly Vector3 CrownGlow;
             public readonly Color MapColor;
 
-            public SpeciesTraits(int minHeight, int maxHeight, float swayAmplitude,
-                float pushAmplitude, Vector3 stemGlow, Vector3 crownGlow, Color mapColor)
+            public SpeciesTraits(int minHeight, int maxHeight, float buoyancy, float bendStiffness,
+                float pliancy, float currentResponse, Vector3 stemGlow, Vector3 crownGlow, Color mapColor)
             {
                 MinHeight = minHeight;
                 MaxHeight = maxHeight;
-                SwayAmplitude = swayAmplitude;
-                PushAmplitude = pushAmplitude;
+                Buoyancy = buoyancy;
+                BendStiffness = bendStiffness;
+                Pliancy = pliancy;
+                CurrentResponse = currentResponse;
                 StemGlow = stemGlow;
                 CrownGlow = crownGlow;
                 MapColor = mapColor;
@@ -89,15 +86,15 @@ namespace SoA.Content.Tiles.Nature
 
         public static readonly SpeciesTraits[] Traits =
         {
-            // Ель: несущий вид Чёрных лесов, тянется от пола до свода. Ствол толстый,
-            // от толчка гнётся сдержанно
-            new(12, 110, 0.045f, 0.30f, new Vector3(0.030f, 0.070f, 0.095f),
+            // Ель: несущий вид Чёрных лесов, тянется от пола до свода. Ствол толстый:
+            // пловец отводит его сдержанно, и он неторопливо встаёт обратно
+            new(12, 110, 0.004f, 0.50f, 0.45f, 1.0f, new Vector3(0.030f, 0.070f, 0.095f),
                 new Vector3(0.150f, 0.360f, 0.430f), new Color(30, 62, 70)),
-            // Папоротник: подлесок по пояс, гибче ели — и колышется, и отжимается сильнее
-            new(6, 26, 0.075f, 0.50f, new Vector3(0.045f, 0.105f, 0.100f),
+            // Папоротник: подлесок по пояс, гибкий — легко увлекается следом и сильнее колышется
+            new(6, 26, 0.006f, 0.30f, 0.85f, 1.5f, new Vector3(0.045f, 0.105f, 0.100f),
                 new Vector3(0.120f, 0.330f, 0.300f), new Color(46, 104, 92)),
             // Рыжий куст: акцент у самого дна, жёсткий, почти не шевелится
-            new(3, 7, 0.018f, 0.16f, new Vector3(0.090f, 0.045f, 0.015f),
+            new(3, 7, 0.020f, 0.60f, 0.40f, 0.3f, new Vector3(0.090f, 0.045f, 0.015f),
                 new Vector3(0.280f, 0.150f, 0.045f), new Color(122, 74, 30)),
         };
 
@@ -206,53 +203,38 @@ namespace SoA.Content.Tiles.Nature
             return below.TileType == Type || Main.tileSolid[below.TileType];
         }
 
-        // Своё рисование ради двух вещей: клетка шире тайла (рисунок центрируется
-        // по тайлу и свисает на соседей) и качание — сегмент кренится вокруг
-        // середины нижней грани тайла, размах растёт к верхушке, фаза сдвинута
-        // по высоте, и по стеблю идёт волна
+        // Тайлы движок рисует в кэш-текстуру раз в несколько кадров — нарисованное здесь
+        // двигалось бы рывками. Поэтому здесь сегмент только регистрируется особой точкой
+        // (как ванильные лианы и трава), а рисуется в SpecialDraw — каждый кадр
         public override bool PreDraw(int i, int j, SpriteBatch spriteBatch)
         {
-            Tile tile = Main.tile[i, j];
-            Texture2D texture = TextureAssets.Tile[Type].Value;
-
-            Vector2 offset = Main.drawToScreen ? Vector2.Zero : new Vector2(Main.offScreenRange);
-            Vector2 anchor = new Vector2(i * 16 + 8, j * 16 + 16) - Main.screenPosition + offset;
-            Vector2 origin = new(CellWidth / 2f, CellHeight);
-            var frame = new Rectangle(tile.TileFrameX, tile.TileFrameY, CellWidth, CellHeight);
-
-            spriteBatch.Draw(texture, anchor, frame, Lighting.GetColor(i, j),
-                SwayAt(i, j, tile), origin, 1f, SpriteEffects.None, 0f);
+            Main.instance.TilesRenderer.AddSpecialPoint(i, j, TileDrawing.TileCounterType.CustomNonSolid);
             return false;
         }
 
-        private float SwayAt(int i, int j, Tile tile)
+        // Клетка шире тайла (рисунок центрируется по стеблю и свисает на соседей),
+        // поза — из физики стебля: сегмент стоит на верхушке нижнего и повёрнут вдоль
+        // своего отрезка цепи
+        public override void SpecialDraw(int i, int j, SpriteBatch spriteBatch)
         {
-            int heightAboveFloor = 0;
-            float push = TideFloraWind.PushAt(i, j);
+            Tile tile = Main.tile[i, j];
+            if (!tile.HasTile || tile.TileType != Type)
+                return;
 
-            while (heightAboveFloor < MaxStrandHeight && j + heightAboveFloor + 1 < Main.maxTilesY)
+            // Стебель, который физика ещё не видела (посадили в этот кадр), стоит прямо
+            if (!TideKelpPhysics.TryGetPose(i, j, out Vector2 anchor, out float rotation))
             {
-                Tile below = Main.tile[i, j + heightAboveFloor + 1];
-                if (!below.HasTile || below.TileType != Type)
-                    break;
-                heightAboveFloor++;
-
-                // Толчок снизу передаётся вверх по стеблю и слабеет с расстоянием:
-                // задели у комля — качнуло всю макушку, а не один тайл
-                if (heightAboveFloor <= PushReachBelow)
-                    push += TideFloraWind.PushAt(i, j + heightAboveFloor)
-                        * (1f - heightAboveFloor / (float)(PushReachBelow + 1));
+                anchor = new Vector2(i * 16 + 8, j * 16 + 16);
+                rotation = 0f;
             }
 
-            SpeciesTraits traits = Traits[SpeciesAt(tile)];
-            float reach = heightAboveFloor / (float)MaxStrandHeight;
-            float phase = Main.GameUpdateCount * SwaySpeed + i * 0.31f + j * 0.09f;
-            float sway = MathF.Sin(phase) * traits.SwayAmplitude * (0.3f + reach);
+            Texture2D texture = TextureAssets.Tile[Type].Value;
+            Vector2 origin = new(CellWidth / 2f, CellHeight);
+            var frame = new Rectangle(tile.TileFrameX, tile.TileFrameY, CellWidth, CellHeight);
+            Color light = Lighting.GetColor(anchor.ToTileCoordinates());
 
-            // Толчки соседних сущностей складываются, и без предела стебель
-            // проворачивало бы через голову
-            push = MathHelper.Clamp(push, -MaxPushTurns, MaxPushTurns);
-            return sway + push * traits.PushAmplitude;
+            spriteBatch.Draw(texture, anchor - Main.screenPosition, frame, light,
+                rotation, origin, 1f, SpriteEffects.None, 0f);
         }
     }
 }

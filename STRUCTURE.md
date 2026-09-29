@@ -52,7 +52,7 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 | `Players` | ModPlayer'ы; `RoyalSpear/` — состояние копья и полоска приливного удара |
 | `Systems` | `SoASystem` (регистрация шейдеров), `DownedBossSystem` |
 | `Systems/Worldgen` | генерация: проходы, `TideOcean/` — океан Прилива Теней |
-| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/` |
+| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `SpriteSpine` (кадр спрайта, натянутый на гнущийся позвоночник — угорь), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/`, `Atmosphere/` — атмосфера Прилива Теней (экранный фильтр воды, фоновые частицы) |
 | `UI/DevMenu`, `UI/StructureTool` | самодельный интерфейс инструментов разработки |
 | `UI` (плоско) | `SoAHudDraw`, `ToolText` — общие примитивы рисования интерфейса |
 | `Utils` | `SoACombat` (проверка «промок»), структуры, шум, фильтры |
@@ -64,7 +64,7 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 |---|---|
 | `Effects` | шейдеры: `.fx` (источник), `.fxo`, `.xnb` (то, что грузит игра), `Compiler/fxc.exe` |
 | `Textures` | текстуры для шейдеров и интерфейса: `WaveNoise`, `BeamDistortion`, `TideGeyser` (лист струи), `RoyalTideBar*` |
-| `Dusts`, `Gores`, `Structures` | пыль, горы, файлы структур |
+| `Dusts`, `Gores`, `Structures` | пыль, горы, файлы структур: `sunken_ship`, `breakwater_ruin` (руины волнолома у края мира, ждёт постройки; без файла там голый риф) |
 
 ## Общие компоненты — не растаскивать по владельцам
 
