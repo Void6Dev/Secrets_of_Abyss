@@ -3,7 +3,6 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
 using Terraria;
-using Terraria.Graphics.CameraModifiers;
 using Terraria.Graphics.Effects;
 using Terraria.Graphics.Shaders;
 using Terraria.ModLoader;
@@ -104,8 +103,8 @@ namespace SoA.Common.Graphics
             {
                 _wavesEmitted++;
                 if (_shakePerWave > 0f)
-                    Main.instance.CameraModifiers.Add(new PunchCameraModifier(
-                        _worldCenter, Main.rand.NextVector2Unit(), _shakePerWave, 6f, ShakeTicks, 1200f, FilterKey));
+                    ScreenShake.Punch(
+                        _worldCenter, Main.rand.NextVector2Unit(), _shakePerWave, 6f, ShakeTicks, 1200f, FilterKey);
             }
 
             // Центр волны в экранных пикселях с учётом зума камеры

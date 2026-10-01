@@ -168,10 +168,13 @@ namespace SoA.Common.Graphics
         }
 
         // Сжатие по горизонтали вокруг точки мира: scaleX = 1 — без изменений
-        public static Matrix HorizontalSquash(Vector2 worldCenter, float scaleX)
+        public static Matrix HorizontalSquash(Vector2 worldCenter, float scaleX) => Squash(worldCenter, new Vector2(scaleX, 1f));
+
+        // Сжатие по осям вокруг точки мира. (1, 0.3) кладёт круг «на землю» в перспективе
+        public static Matrix Squash(Vector2 worldCenter, Vector2 scale)
         {
             Vector2 c = worldCenter - Main.screenPosition;
-            return Matrix.CreateTranslation(-c.X, -c.Y, 0f) * Matrix.CreateScale(scaleX, 1f, 1f)
+            return Matrix.CreateTranslation(-c.X, -c.Y, 0f) * Matrix.CreateScale(scale.X, scale.Y, 1f)
                 * Matrix.CreateTranslation(c.X, c.Y, 0f);
         }
 

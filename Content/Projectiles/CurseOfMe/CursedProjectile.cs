@@ -7,7 +7,6 @@ using Microsoft.Xna.Framework.Graphics;
 using System;
 using Terraria.Audio;
 using Terraria.Graphics.Shaders;
-using Terraria.Graphics.CameraModifiers;
 
 namespace SoA.Content.Projectiles
 {
@@ -141,8 +140,8 @@ namespace SoA.Content.Projectiles
 
             // 📳 тряска камеры (гаснет с расстоянием)
             if (Main.netMode != NetmodeID.Server)
-                Main.instance.CameraModifiers.Add(new PunchCameraModifier(
-                    center, Main.rand.NextVector2Unit(), 10f, 9f, 22, 800f, "SoA:CursedBlast"));
+                ScreenShake.Punch(
+                    center, Main.rand.NextVector2Unit(), 10f, 9f, 22, 800f, "SoA:CursedBlast");
 
             // 💥 визуальный взрыв: вспышка + рваная ударная волна (шейдер SoA:CursedBlast)
             if (Main.myPlayer == Projectile.owner)

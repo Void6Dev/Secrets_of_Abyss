@@ -4,7 +4,6 @@ using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
-using Terraria.Graphics.CameraModifiers;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
@@ -302,8 +301,8 @@ namespace SoA.Content.Projectiles
 
             SoundEngine.PlaySound(SoundID.Item21 with { Volume = 0.6f, Pitch = 0.1f }, tip);
             if (Projectile.owner == Main.myPlayer)
-                Main.instance.CameraModifiers.Add(new PunchCameraModifier(
-                    Projectile.Center, strikeDir, 5f, 6f, 10, 1000f, "RoyalSpearLunge"));
+                ScreenShake.Punch(
+                    Projectile.Center, strikeDir, 5f, 6f, 10, 1000f, "RoyalSpearLunge");
         }
 
         // Насколько копьё вынесено вперёд: 0 — у кисти, 1 — полный вылет, меньше нуля —

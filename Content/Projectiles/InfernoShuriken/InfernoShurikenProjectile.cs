@@ -5,11 +5,11 @@ using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
-using Terraria.Graphics.CameraModifiers;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
 using SoA.Common.Graphics.Particles;
+using SoA.Common.Players;
 using SoA.Common.Utils;
 using SoA.Content.Buffs;
 using SoA.Content.Items.Weapons;
@@ -23,7 +23,7 @@ namespace SoA.Content.Projectiles
         Overheat,   // передержан
     }
 
-    // Инферно-сюрикен. Вид броска задаёт ShurikenChargePlayer:
+    // Инферно-сюрикен. Вид броска задаёт InfernoShurikenHeld:
     //   Light    — дугой; рикошетит между врагами (1–3 прыжка по заряду), от стен отскакивает;
     //   Perfect  — почти прямо; вгрызается в первую цель, пилит её, вырывается со взрывом
     //              и летит обратно. Пойманный сбрасывает откат и даёт стак Жара;
@@ -132,7 +132,7 @@ namespace SoA.Content.Projectiles
 
         private Color GlowColor => Kind switch
         {
-            ShurikenThrow.Perfect => Color.Lerp(PerfectGlow, HotWhite, Heat / (float)ShurikenChargePlayer.MaxHeat),
+            ShurikenThrow.Perfect => Color.Lerp(PerfectGlow, HotWhite, Heat / (float)InfernoShurikenPlayer.MaxHeat),
             ShurikenThrow.Overheat => OverheatGlow,
             _ => LightGlow,
         };
@@ -283,7 +283,7 @@ namespace SoA.Content.Projectiles
 
             SpawnBurst(PerfectBurstMult + HeatBurstBonus * Heat, PerfectBurstRadius + HeatRadiusBonus * Heat,
                 0.3f + 0.2f * Heat);
-            if (Heat >= ShurikenChargePlayer.MaxHeat)
+            if (Heat >= InfernoShurikenPlayer.MaxHeat)
                 SpawnMoltenShards();
         }
 
@@ -311,7 +311,7 @@ namespace SoA.Content.Projectiles
             if (distance < CatchDistance || Projectile.Hitbox.Intersects(owner.Hitbox))
             {
                 _caught = true;
-                owner.GetModPlayer<ShurikenChargePlayer>().OnShurikenCaught();
+                owner.GetModPlayer<InfernoShurikenPlayer>().OnShurikenCaught();
                 Projectile.Kill();
             }
         }
@@ -447,7 +447,7 @@ namespace SoA.Content.Projectiles
 
             // Жар копится только цепочкой пойманных идеальных бросков
             if (Kind == ShurikenThrow.Perfect && !_caught)
-                Owner.GetModPlayer<ShurikenChargePlayer>().ResetHeat();
+                Owner.GetModPlayer<InfernoShurikenPlayer>().ResetHeat();
 
             // Вернувшийся сюрикен уже взорвался при вырывании
             if (_caught || _dropped || _phase == Phase.Returning)
@@ -554,8 +554,8 @@ namespace SoA.Content.Projectiles
                     SoundEngine.PlaySound(SoundID.Item74 with { Pitch = 0.4f, Volume = 0.5f }, at);
                     if (IsOwner)
                     {
-                        Main.instance.CameraModifiers.Add(new PunchCameraModifier(at, Main.rand.NextVector2Unit(),
-                            2.5f, 10f, 8, 600f, "SoA:ShurikenBite"));
+                        ScreenShake.Punch(at, Main.rand.NextVector2Unit(),
+                            2.5f, 10f, 8, 600f, "SoA:ShurikenBite");
                     }
                     break;
 

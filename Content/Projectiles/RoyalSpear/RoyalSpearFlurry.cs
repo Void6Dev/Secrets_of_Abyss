@@ -82,6 +82,10 @@ namespace SoA.Content.Projectiles
         private int announcedStrikes = MinFlurryStrikes;
         private bool fullChargeAnnounced;
 
+        // Вспышка силуэта: слабая на каждой прибавленной ступени, полная — на пределе
+        private const int StageFlashTicks = RoyalSpearCharge.FlashTicks / 2;
+        private int _flash;
+
         public override string Texture => "SoA/Content/Projectiles/RoyalSpear/RoyalSpearProjectile";
 
         private float Phase => Projectile.ai[0];
@@ -149,10 +153,12 @@ namespace SoA.Content.Projectiles
             // Счётчик крутят все стороны: иначе на чужих экранах замах набирался бы
             // только в тики, когда владелец прислал пакет
             Projectile.ai[1]++;
+            if (_flash > 0)
+                _flash--;
 
-            float shake = Power >= 1f ? Main.rand.NextFloat(-1.2f, 1.2f) : 0f;
             RoyalSpearPlayer.HoldSpearInHand(owner, Projectile, Aim,
-                HoldDistance - PullbackDistance * Power + shake);
+                RoyalSpearPlayer.PulledReach(HoldDistance, PullbackDistance, Power)
+                + RoyalSpearPlayer.StrainShake(Power, HeldTicks));
 
             if (!Charging)
                 return;
@@ -171,6 +177,7 @@ namespace SoA.Content.Projectiles
             if (strikes > announcedStrikes)
             {
                 announcedStrikes = strikes;
+                _flash = Math.Max(_flash, StageFlashTicks);
                 if (!Main.dedServ)
                 {
                     float stage = (strikes - MinFlurryStrikes) / (float)(MaxFlurryStrikes - MinFlurryStrikes);
@@ -189,6 +196,7 @@ namespace SoA.Content.Projectiles
             if (!fullChargeAnnounced && Power >= 1f)
             {
                 fullChargeAnnounced = true;
+                _flash = RoyalSpearCharge.FlashTicks;
                 RoyalSpearCharge.EmitReadyBurst(Projectile.Center);
             }
         }
@@ -299,11 +307,14 @@ namespace SoA.Content.Projectiles
             Vector2 origin = new(tex.Width / 2f, tex.Height - GripOffset);
             Vector2 drawPos = Projectile.Center - Main.screenPosition;
 
+            float scale = Projectile.scale * RoyalSpearCharge.PopScale(HeldTicks);
+
             if (Charging)
                 RoyalSpearCharge.DrawChargeGlow(Projectile, tex, drawPos, origin, Power, Aim);
 
             Main.EntitySpriteDraw(tex, drawPos, null, Projectile.GetAlpha(lightColor),
-                Projectile.rotation, origin, Projectile.scale, SpriteEffects.None, 0);
+                Projectile.rotation, origin, scale, SpriteEffects.None, 0);
+            RoyalSpearCharge.DrawFlash(Projectile, tex, drawPos, origin, scale, _flash / (float)RoyalSpearCharge.FlashTicks);
 
             if (Charging)
                 DrawStrikeCounter();

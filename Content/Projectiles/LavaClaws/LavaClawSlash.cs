@@ -8,13 +8,17 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
 using SoA.Common.Graphics.Particles;
+using SoA.Common.Utils;
+using SoA.Common.Weapons;
 using SoA.Content.Buffs;
 
 namespace SoA.Content.Projectiles
 {
     // Удар Когтей Лавовой Тени: коготь рывком проходит дугу к курсору, попеременно правой
     // и левой рукой, и оставляет три параллельных раскалённых следа. Каждый четвёртый удар —
-    // тяжёлый: дуга шире, дальше и ярче. Попадание ставит лавовую метку (LavaExplosionGlobalNPC).
+    // тяжёлый: дуга шире, дальше и ярче, коготь вспыхивает белым. Попадание ставит лавовую
+    // метку (LavaExplosionGlobalNPC). Свободная рука держит стойку у груди, бьющая отскакивает
+    // от цели при попадании и плавно опускается после удара; за когтем — огненные копии.
     //   ai[0] — сторона взмаха (±1), ai[1] — 1 для тяжёлого, ai[2] — угол прицела
     public class LavaClawSlash : ModProjectile
     {
@@ -32,6 +36,12 @@ namespace SoA.Content.Projectiles
         private const float HitLineWidth = 22f;
 
         private const int LingerUpdates = 12;         // после удара царапины ещё 6 тиков висят и остывают
+        private const int ReturnUpdates = 8;          // бьющая рука плавно опускается после удара
+
+        // ---------- РУКИ ----------
+        private const float GuardArm = 0.5f;          // свободная рука у груди, локоть назад (для взгляда вправо)
+        private const float RecoilReach = 0.18f;      // отскок от цели: доля вылета
+        private const float RecoilDecay = 0.82f;
 
         // ---------- ВИД ----------
         private const int TrailLength = SlashUpdates; // след лежит на всей дуге удара, а не только за когтем
@@ -45,6 +55,9 @@ namespace SoA.Content.Projectiles
         private const float ClawScaleHeavy = 1.75f;
         private static readonly Vector2 WristOrigin = new(6f, 22f); // запястье на спрайте; когти смотрят вправо-вверх
         private const float SpriteForwardAngle = -MathHelper.PiOver4;
+        private const int PopUpdates = 3;             // коготь «выпрыгивает» в начале взмаха
+        private const int GhostCount = 3;             // огненные копии когтя по дуге
+        private const int HeavyFlashUpdates = 8;
 
         private static readonly Color HotWhite = new(255, 240, 190);
         private static readonly Color LavaOrange = new(255, 140, 40);
@@ -64,6 +77,9 @@ namespace SoA.Content.Projectiles
         private readonly Vector2[] _trail = new Vector2[TrailLength];
         private readonly float[] _trailBorn = new float[TrailLength];
         private int _trailCount;
+
+        private float _recoil;        // 1 сразу после попадания, гаснет
+        private int _flash;           // вспышка тяжёлого удара
 
         public override void SetDefaults()
         {
@@ -112,33 +128,39 @@ namespace SoA.Content.Projectiles
             if (Age == 0f)
                 OnSlashStart();
             Age++;
+            _recoil *= RecoilDecay;
+            if (_flash > 0)
+                _flash--;
 
-            // Удар закончен: коготь не режет и не держит руку, царапины просто остывают
+            // Удар закончен: коготь не режет, царапины остывают, рука плавно опускается
             if (Lingering)
             {
                 Projectile.friendly = false;
                 Projectile.Center = owner.MountedCenter;
                 Projectile.velocity = Vector2.Zero;
+                ReturnArm(owner);
                 return;
             }
 
             float t = Progress;
             float angle = AngleAt(t);
-            float reach = ReachAt(t);
+            float reach = ReachAt(t) * (1f - RecoilReach * _recoil);
 
             Projectile.Center = owner.MountedCenter;
             Projectile.velocity = Vector2.Zero;
             Projectile.rotation = angle;
             Projectile.friendly = t >= ActiveFrom && t <= ActiveTo;
 
-            // Игрок смотрит туда, куда бьёт; руки чередуются вместе со стороной взмаха
+            // Игрок смотрит туда, куда бьёт; руки чередуются вместе со стороной взмаха,
+            // свободная рука собирается в стойку у груди
             owner.heldProj = Projectile.whoAmI;
             owner.ChangeDir(Math.Cos(Aim) >= 0.0 ? 1 : -1);
-            float armRotation = angle - MathHelper.PiOver2;
+            SetStrikingArm(owner, angle - MathHelper.PiOver2);
+            float guard = HeldProjectiles.Mirror(GuardArm * SoAEasing.CircOut(Math.Min(Age / (float)PopUpdates, 1f)), owner.direction);
             if (Side > 0f)
-                owner.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Full, armRotation);
+                owner.SetCompositeArmBack(true, Player.CompositeArmStretchAmount.Quarter, guard);
             else
-                owner.SetCompositeArmBack(true, Player.CompositeArmStretchAmount.Full, armRotation);
+                owner.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Quarter, guard);
 
             PushTrail(angle, reach);
 
@@ -157,10 +179,45 @@ namespace SoA.Content.Projectiles
             }
         }
 
+        private void SetStrikingArm(Player owner, float rotation)
+        {
+            if (Side > 0f)
+                owner.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Full, rotation);
+            else
+                owner.SetCompositeArmBack(true, Player.CompositeArmStretchAmount.Full, rotation);
+        }
+
+        // После удара бьющая рука опускается к телу, а не падает рывком. Только если это
+        // последний взмах: следующий уже сам ведёт руки
+        private void ReturnArm(Player owner)
+        {
+            float since = Age - SlashUpdates;
+            if (since > ReturnUpdates || _trailCount == 0 || owner.ownedProjectileCounts[Type] > 1)
+                return;
+
+            float from = _trail[0].X - MathHelper.PiOver2;
+            float rest = HeldProjectiles.Mirror(GuardArm * 0.4f, owner.direction);
+            SetStrikingArm(owner, from.AngleLerp(rest, SoAEasing.QuadOut(since / ReturnUpdates)));
+        }
+
         private void OnSlashStart()
         {
+            if (Heavy)
+                _flash = HeavyFlashUpdates;
             if (Main.dedServ)
                 return;
+
+            // Тяжёлый удар: кольцо искр вокруг кисти на замахе
+            if (Heavy)
+            {
+                Vector2 wrist = Main.player[Projectile.owner].MountedCenter + AngleAt(0f).ToRotationVector2() * HandOffset;
+                for (int i = 0; i < 12; i++)
+                {
+                    Vector2 dir = (MathHelper.TwoPi * i / 12f).ToRotationVector2();
+                    SoAParticles.SpawnStreak(wrist + dir * 6f, dir * Main.rand.NextFloat(2.5f, 5f), HotWhite, 2f,
+                        gravity: 0f, life: 12, lengthPerSpeed: 2f);
+                }
+            }
             SoundEngine.PlaySound((Heavy ? SoundID.Item74 : SoundID.Item71) with
             {
                 Pitch = Heavy ? -0.35f : 0.15f + Side * 0.12f,
@@ -209,7 +266,13 @@ namespace SoA.Content.Projectiles
         {
             target.AddBuff(ModContent.BuffType<LavaExplosionDebuff>(), MarkTicks);
             target.GetGlobalNPC<LavaExplosionGlobalNPC>().AddMark(Projectile.owner, Projectile.damage);
+            _recoil = 1f;   // рука отскакивает от цели
             HitSparks(target);
+
+            // Тяжёлый удар отдаётся в камеру: один короткий толчок на каждый четвёртый удар
+            if (Heavy && Projectile.owner == Main.myPlayer)
+                ScreenShake.Punch(target.Center, (target.Center - Projectile.Center).SafeNormalize(Vector2.UnitX),
+                    2.5f, 8f, 8, 700f, "SoA:LavaClawHeavy");
         }
 
         // Искры по ходу взмаха, вспышка и шипение раскалённого металла
@@ -252,18 +315,35 @@ namespace SoA.Content.Projectiles
                 DrawClawMarks(sb, center, fade, MarkLayer.Core);
             }
 
-            // Жар вокруг когтя и его светящийся двойник под спрайтом — только пока идёт удар
+            Texture2D tex = TextureAssets.Projectile[Type].Value;
+            float pop = SoAEasing.BackOut(Math.Min(Age / PopUpdates, 1f));
+
+            // Жар вокруг когтя, огненные копии по дуге и светящийся двойник под спрайтом —
+            // только пока идёт удар
             if (!Lingering)
             {
                 Vector2 tip = TrailPoint(center, _trail[0], 0f);
                 SoAVfx.DrawTintedGlow(sb, tip, new Vector2(Heavy ? 120f : 85f), LavaOrange * 0.55f);
-                DrawClaw(sb, center, LavaOrange * 0.5f, 1.12f);
+                for (int i = Math.Min(_trailCount, GhostCount + 1) - 1; i >= 1; i--)
+                {
+                    float ghost = 1f - i / (float)(GhostCount + 1);
+                    DrawClaw(sb, tex, center, _trail[i].X, LavaOrange * (ghost * ghost * 0.6f), pop);
+                }
+                DrawClaw(sb, tex, center, _trail[0].X, LavaOrange * 0.5f, 1.12f * pop);
             }
             SoAVfx.EndAdditive(sb);
 
             // Сам коготь — раскалённый, свет мира ему не нужен
             if (!Lingering)
-                DrawClaw(sb, center, Color.White, 1f);
+            {
+                DrawClaw(sb, tex, center, _trail[0].X, Color.White, pop);
+                if (_flash > 0)
+                {
+                    float flash = SoAEasing.QuadIn(_flash / (float)HeavyFlashUpdates);
+                    DrawClaw(sb, SilhouetteCache.Get(tex), center, _trail[0].X,
+                        SoAVfx.Additive(Color.White) * (flash * 1.2f), pop);
+                }
+            }
             return false;
         }
 
@@ -349,11 +429,9 @@ namespace SoA.Content.Projectiles
             ? Color.Lerp(LavaOrange, HotWhite, (heat - 0.6f) / 0.4f)
             : Color.Lerp(DeepRed, LavaOrange, heat / 0.6f);
 
-        // Коготь в кисти: запястье на руке, кончики — по направлению взмаха
-        private void DrawClaw(SpriteBatch sb, Vector2 center, Color color, float scaleMult)
+        // Коготь в кисти: запястье на руке, кончики — по направлению взмаха (angle)
+        private void DrawClaw(SpriteBatch sb, Texture2D tex, Vector2 center, float angle, Color color, float scaleMult)
         {
-            Texture2D tex = TextureAssets.Projectile[Type].Value;
-            float angle = _trail[0].X;
             bool flipped = Main.player[Projectile.owner].direction == -1;
 
             // Отражённый спрайт смотрит вверх-влево — доворот считаем от его «вперёд»

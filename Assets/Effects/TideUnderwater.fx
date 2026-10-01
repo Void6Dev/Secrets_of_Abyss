@@ -38,6 +38,9 @@ static const float TilePx = 16.0;
 static const float RaySlant = 0.3;          // наклон лучей: столбцов на тайл глубины
 static const float RayFalloffTiles = 45.0;  // лучи гаснут в e раз за столько тайлов
 static const float CausticFalloffTiles = 10.0;
+static const float RayLight = 0.4;          // сила света луча (цвет солнца, не яркость кадра)
+static const float RaySceneLift = 0.12;     // доля от яркости самого кадра — лёгкая, без рисунка
+static const float CausticVolume = 0.3;     // каустики в толще воды; на дне — в полную силу
 static const float3 Luma = float3(0.299, 0.587, 0.114);
 
 float Band(float x, float sharpness)
@@ -45,16 +48,19 @@ float Band(float x, float sharpness)
     return pow(sin(x) * 0.5 + 0.5, sharpness);
 }
 
-// Столбы света: три набора узких полос вдоль наклонной оси (шаг ~15-50 тайлов,
-// ширина ~3-6), медленно плывут, вся картина дышит, как от волн на поверхности
+// Столбы света: три набора мягких полос вдоль наклонной оси (шаг ~15-50 тайлов),
+// медленно плывут, вся картина дышит, как от волн на поверхности. Всё здесь зависит
+// только от r — координаты поперёк луча, поэтому лучи остаются прямыми: свет под водой
+// мерцает и сдвигается, но не гнётся
 float Rays(float2 world, float depthTiles)
 {
     float r = world.x / TilePx + depthTiles * RaySlant;
-    float shafts = Band(r * 0.21 + uTime * 0.35, 10.0)
-        + Band(r * 0.37 - uTime * 0.27 + 2.1, 14.0) * 0.8
-        + Band(r * 0.13 + uTime * 0.18 + 4.3, 8.0) * 0.7;
+    float shafts = Band(r * 0.21 + uTime * 0.35, 7.0)
+        + Band(r * 0.37 - uTime * 0.27 + 2.1, 10.0) * 0.8
+        + Band(r * 0.13 + uTime * 0.18 + 4.3, 6.0) * 0.7;
     float breathe = 0.6 + 0.4 * sin(r * 0.05 + uTime * 0.4);
-    return shafts * breathe;
+    float shimmer = 0.85 + 0.15 * sin(r * 0.9 + uTime * 2.3);
+    return shafts * breathe * shimmer;
 }
 
 // Каустики: сетка светлых прожилок из суммы искривлённых синусов, два слоя
@@ -105,10 +111,13 @@ float4 TidePS(float2 uv : TEXCOORD0) : COLOR0
     float lit = saturate(lum * 6.0);
     float rayFade = saturate(depthTiles / 2.0) * exp(-max(depthTiles, 0.0) / RayFalloffTiles);
     float rays = Rays(world, depthTiles) * rayFade * shallow * water.x;
-    col += rays * (col * 0.6 + uSecondaryColor * 0.22 * lit);
+    // Луч — это свет солнца, ровный по всей полосе. Раньше он умножал сам кадр (col * 0.6),
+    // и внутри луча проступал кривой рисунок воды и каустик — луч выглядел изогнутым
+    col += rays * (uSecondaryColor * RayLight * lit + col * RaySceneLift);
 
+    // Каустики собираются на дне; в толще воды от них остаётся лишь слабый отсвет
     float causticFade = saturate(depthTiles / 1.5) * exp(-max(depthTiles, 0.0) / CausticFalloffTiles);
-    float causticSurface = max(water.x, water.y);
+    float causticSurface = max(water.x * CausticVolume, water.y);
     col += col * Caustics(world) * causticFade * shallow * causticSurface * 0.35;
 
     // Оттенок толщи. Яркое почти не трогаем — свечение остаётся живым

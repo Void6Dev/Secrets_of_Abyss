@@ -184,10 +184,11 @@ Mods: {
 				DisplayName: Scythe of Fire Storm
 				Tooltip:
 					'''
-					Hold to wind up the scythe behind your back
-					When the blade ignites, release to unleash a blazing tornado
+					Hold to heat the blade through three stages, release to swing
+					A quick swing throws a fiery crescent, a heated one unleashes a blazing tornado
+					Each stage grows the tornado and costs extra mana
 					The tornado travels forward, pulling enemies in and setting them ablaze
-					Charging increases its size, range and damage
+					Swing through your tornado to feed it: it burns longer and turns toward the cursor
 					Launching a third tornado snuffs out the oldest one
 					Touching water turns the vortex into a scalding steam geyser that hurls enemies skyward
 					'''
@@ -226,8 +227,9 @@ Mods: {
 				DisplayName: Toothbreaker
 				Tooltip:
 					'''
-					Pickaxe and hammer forged from ichthyophage fangs
-					Digs faster underwater
+					Hold to raise the hammer overhead, release to bring it crashing down
+					Longer charge hits harder
+					A fully charged slam shakes the ground and stuns enemies
 					'''
 			}
 
@@ -345,6 +347,13 @@ Mods: {
 			RoyalSpearDashTrail.DisplayName: Royal Regalia
 			LavaClawBurst.DisplayName: Lava Claw Burst
 			LavaClawSlash.DisplayName: Lava Claw Slash
+			ToothbreakerSlam.DisplayName: Toothbreaker Slam
+			ToothbreakerShockwave.DisplayName: Toothbreaker Shockwave
+			ToothbreakerClub.DisplayName: Toothbreaker Club
+			FireCrescentProjectile.DisplayName: Fire Crescent Projectile
+			ScytheOfFireStormClub.DisplayName: Scythe Of Fire Storm Club
+			FirestormBurst.DisplayName: Firestorm Burst
+			InfernoShurikenHeld.DisplayName: Inferno Shuriken Held
 		}
 
 		Buffs: {
@@ -453,6 +462,15 @@ Mods: {
 		}
 
 		Configs: {
+			SoAClientConfig: {
+				DisplayName: Secrets of Abyss
+
+				ScreenShake: {
+					Label: Screen shake
+					Tooltip: Camera shake from mod weapons, explosions and bosses. Turn off if it makes you dizzy.
+				}
+			}
+
 			SoADevConfig: {
 				DisplayName: SoA Dev Tools
 

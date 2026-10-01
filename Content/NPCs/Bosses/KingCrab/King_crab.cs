@@ -6,7 +6,6 @@ using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent.Bestiary;
 using Terraria.GameContent.ItemDropRules;
-using Terraria.Graphics.CameraModifiers;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
@@ -1834,8 +1833,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (Main.dedServ)
                 return;
             Vector2 dir = direction ?? -Vector2.UnitY;
-            Main.instance.CameraModifiers.Add(new PunchCameraModifier(
-                NPC.Center, dir.SafeNormalize(-Vector2.UnitY), strength, 6f, duration, 1200f, FullName));
+            ScreenShake.Punch(
+                NPC.Center, dir.SafeNormalize(-Vector2.UnitY), strength, 6f, duration, 1200f, FullName);
         }
 
         // Непрерывный гул: короткие толчки в случайные стороны, подновляемые каждые
@@ -1845,9 +1844,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         {
             if (Main.dedServ)
                 return;
-            Main.instance.CameraModifiers.Add(new PunchCameraModifier(
+            ScreenShake.Punch(
                 NPC.Center, Main.rand.NextVector2Unit(), strength, 8f,
-                BurrowRumbleInterval + 4, 2400f, FullName + "_rumble"));
+                BurrowRumbleInterval + 4, 2400f, FullName + "_rumble");
         }
 
         #endregion

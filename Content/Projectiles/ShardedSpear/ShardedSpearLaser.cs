@@ -9,11 +9,20 @@ using Terraria.GameContent;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria.Graphics.Shaders;
-using Terraria.Graphics.CameraModifiers;
+
+using SoA.Common.Graphics;
+using SoA.Common.Utils;
 
 namespace SoA.Content.Projectiles
 {
-    // Держатель копья: зарядка, наведение, спавн луча и вся отрисовка копья
+    // Держатель копья: подъём, зарядка, наведение, спавн луча и вся отрисовка копья.
+    //  1. Подъём: копьё «выпрыгивает» в руку, рука поднимает его к прицелу по кривой,
+    //     вторая рука подхватывает древко.
+    //  2. Зарядка: копьё понемногу оттягивается к телу и дрожит — с зарядом всё сильнее.
+    //  3. Выстрел: белая вспышка силуэта и отдача — копьё подбрасывает вверх, и оно тяжело
+    //     возвращается к цели. Отдача поворачивает само наведение, поэтому луч идёт за копьём.
+    //     Пока луч бьёт — мелкая вибрация от мощности.
+    //  4. Отпустил: копьё опускается и тает.
     public class ShardedSpearHoldout : ModProjectile
     {
         public override string Texture => "SoA/Content/Items/Weapons/ShardedSpear";
@@ -24,12 +33,26 @@ namespace SoA.Content.Projectiles
         private const int SpearFrames = 8;
         private const float SpearScale = 1.7f;
 
+        private const int RaiseTicks = 14;
+        private const int LowerTicks = 10;
+        private const float ChargePullback = 6f;        // на сколько px копьё оттягивается к телу к полному заряду
+        private const float ChargeTremble = 0.025f;
+        private const float FiringVibration = 0.012f;
+        private const float RecoilKick = 0.16f;         // рад: насколько выстрел подбрасывает копьё
+        private const float BackArmSupport = 0.32f;     // вторая рука держит древко чуть ниже
+        private const float RestArm = 0.4f;             // поворот руки в покое (вниз-вперёд)
+
         private int _charge;
         private int _manaTimer;
         private int _beamIndex = -1;
         private float _fireFlash;
         private Vector2 _aim;
         private SlotId _loopSlot;
+
+        private int _age;
+        private int _lowerTimer;        // > 0 — копьё опускают после отпускания
+        private float _armRotation;     // абсолютный поворот передней руки
+        private float _lowerFromArm;
 
         private static readonly SoundStyle StartupSound =
             new("SoA/Content/Sounds/ShardedSpear_startup");
@@ -38,15 +61,23 @@ namespace SoA.Content.Projectiles
 
         private float Power => _charge / (float)MaxCharge;
         private bool Charged => _charge >= MaxCharge;
+        private bool Lowering => _lowerTimer > 0;
+        private float RaiseProgress => Math.Min(_age / (float)RaiseTicks, 1f);
+        private float LowerProgress => Math.Min(_lowerTimer / (float)LowerTicks, 1f);
 
         // Наконечник копья в мире: позиция передней руки + половина спрайта вдоль прицела
         internal static Vector2 SpearTip(Player player, Vector2 aimDirection)
         {
             float armRotation = aimDirection.ToRotation() - MathHelper.PiOver2;
             Vector2 handPos = player.GetFrontHandPosition(Player.CompositeArmStretchAmount.Full, armRotation);
+            return TipFrom(handPos, aimDirection, SpearScale);
+        }
+
+        private static Vector2 TipFrom(Vector2 hand, Vector2 aimDirection, float scale)
+        {
             Texture2D spearTex = ModContent.Request<Texture2D>("SoA/Content/Items/Weapons/ShardedSpear").Value;
             float frameHeight = spearTex.Height / (float)SpearFrames;
-            return handPos + aimDirection * (frameHeight * SpearScale * 0.5f);
+            return hand + aimDirection * (frameHeight * scale * 0.5f);
         }
 
         public override void SetDefaults()
@@ -72,9 +103,64 @@ namespace SoA.Content.Projectiles
                 return;
             }
 
-            // Плавное наведение: при стрельбе луч тяжелее доворачивается.
-            // Курсор читает только владелец и рассылает направление через ai[0];
-            // иначе на чужом экране копьё целилось бы в ЛОКАЛЬНЫЙ курсор, а не в курсор владельца.
+            _age++;
+            UpdateAim(player);
+
+            Projectile.Center = player.MountedCenter;
+            Projectile.rotation = _aim.ToRotation();
+
+            // === Поворот персонажа с активированным копьём (сохранено из старой версии) ===
+            player.itemTime = 2;
+            player.itemAnimation = 2;
+            player.direction = _aim.X >= 0f ? 1 : -1;
+            // === конец сохранённого блока ===
+
+            if (Lowering)
+            {
+                LowerSpear(player);
+                return;
+            }
+
+            UpdateArms(player);
+
+            if (!player.channel || player.mouseInterface)
+            {
+                StartLowering();
+                return;
+            }
+
+            if (_charge == 0)
+                SoundEngine.PlaySound(StartupSound, player.position);
+            if (_charge < MaxCharge)
+                _charge++;
+
+            if (++_manaTimer >= ManaDrainInterval)
+            {
+                _manaTimer = 0;
+                if (!player.CheckMana(ManaDrainAmount, pay: true))
+                {
+                    StartLowering();
+                    return;
+                }
+            }
+
+            _fireFlash *= 0.93f;
+
+            Vector2 tip = SpearTip(player, _aim);
+            Lighting.AddLight(tip, 0.05f, 0.3f + Power * 0.5f, 0.8f);
+
+            if (Main.netMode != NetmodeID.Server)
+                SpawnChargeDust(tip);
+
+            if (Charged)
+                UpdateBeam(player, tip);
+        }
+
+        // Плавное наведение: при стрельбе луч тяжелее доворачивается.
+        // Курсор читает только владелец и рассылает направление через ai[0];
+        // иначе на чужом экране копьё целилось бы в ЛОКАЛЬНЫЙ курсор, а не в курсор владельца.
+        private void UpdateAim(Player player)
+        {
             if (Projectile.owner == Main.myPlayer)
             {
                 Vector2 rawAim = Main.MouseWorld - player.MountedCenter;
@@ -93,51 +179,43 @@ namespace SoA.Content.Projectiles
                     ? syncedAim
                     : Vector2.Normalize(Vector2.Lerp(_aim, syncedAim, 0.3f));
             }
+        }
 
-            Projectile.Center = player.MountedCenter;
-            Projectile.rotation = _aim.ToRotation();
+        // Рука поднимает копьё из покоя к прицелу; дальше держит его с натугой и вибрацией.
+        // Вторая рука подхватывает древко чуть ниже
+        private void UpdateArms(Player player)
+        {
+            int dir = player.direction;
+            float aimArm = _aim.ToRotation() - MathHelper.PiOver2;
+            float rest = RestArm * -dir;
+            _armRotation = rest.AngleLerp(aimArm, SoAEasing.CircOut(RaiseProgress));
 
-            // === Поворот персонажа с активированным копьём (сохранено из старой версии) ===
-            player.itemTime = 2;
-            player.itemAnimation = 2;
-            player.direction = _aim.X >= 0f ? 1 : -1;
-            float armRotation = Projectile.rotation - MathHelper.PiOver2;
-            player.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Full, armRotation);
-            // === конец сохранённого блока ===
+            float tremble = Charged
+                ? Main.rand.NextFloatDirection() * FiringVibration
+                : (float)Math.Sin(_age * 1.7f) * ChargeTremble * Power;
+            _armRotation += tremble;
 
-            if (!player.channel || player.mouseInterface)
-            {
-                StopFiring();
+            player.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Full, _armRotation);
+            player.SetCompositeArmBack(true, Player.CompositeArmStretchAmount.ThreeQuarters,
+                _armRotation + BackArmSupport * dir);
+        }
+
+        private void StartLowering()
+        {
+            StopFiring();
+            _lowerTimer = 1;
+            _lowerFromArm = _armRotation;
+        }
+
+        // Копьё опускается к покою и тает, потом держатель исчезает
+        private void LowerSpear(Player player)
+        {
+            _lowerTimer++;
+            float rest = RestArm * -player.direction;
+            _armRotation = _lowerFromArm.AngleLerp(rest, SoAEasing.QuadIn(LowerProgress));
+            player.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Full, _armRotation);
+            if (_lowerTimer >= LowerTicks)
                 Projectile.Kill();
-                return;
-            }
-
-            if (_charge == 0)
-                SoundEngine.PlaySound(StartupSound, player.position);
-            if (_charge < MaxCharge)
-                _charge++;
-
-            if (++_manaTimer >= ManaDrainInterval)
-            {
-                _manaTimer = 0;
-                if (!player.CheckMana(ManaDrainAmount, pay: true))
-                {
-                    StopFiring();
-                    Projectile.Kill();
-                    return;
-                }
-            }
-
-            _fireFlash *= 0.93f;
-
-            Vector2 tip = SpearTip(player, _aim);
-            Lighting.AddLight(tip, 0.05f, 0.3f + Power * 0.5f, 0.8f);
-
-            if (Main.netMode != NetmodeID.Server)
-                SpawnChargeDust(tip);
-
-            if (Charged)
-                UpdateBeam(player, tip);
         }
 
         private void SpawnChargeDust(Vector2 tip)
@@ -191,9 +269,18 @@ namespace SoA.Content.Projectiles
                 _loopSlot = SoundEngine.PlaySound(LoopSound, player.position);
                 _fireFlash = 1f;
 
+                // Отдача подбрасывает само наведение: копьё и луч вместе уходят вверх
+                // и тяжело возвращаются к курсору сглаживанием прицела
+                if (Projectile.owner == Main.myPlayer)
+                {
+                    _aim = _aim.RotatedBy(-RecoilKick * player.direction);
+                    Projectile.ai[0] = _aim.ToRotation();
+                    Projectile.netUpdate = true;
+                }
+
                 if (Main.myPlayer == Projectile.owner)
-                    Main.instance.CameraModifiers.Add(new PunchCameraModifier(
-                        player.MountedCenter, _aim, 8f, 8f, 20, 1000f, "SoA:ShardedSpear"));
+                    ScreenShake.Punch(
+                        player.MountedCenter, _aim, 8f, 8f, 20, 1000f, "SoA:ShardedSpear");
 
                 if (Main.netMode != NetmodeID.Server)
                 {
@@ -251,20 +338,35 @@ namespace SoA.Content.Projectiles
             Rectangle src = new(0, frame * frameHeight, tex.Width, frameHeight);
             Vector2 origin = new(tex.Width * 0.5f, frameHeight * 0.5f);
 
-            // Копьё рисуется в позиции передней руки (та же логика поворота, что в AI)
-            float armRotation = Projectile.rotation - MathHelper.PiOver2;
-            Vector2 handPos = player.GetFrontHandPosition(Player.CompositeArmStretchAmount.Full, armRotation);
+            // Копьё смотрит вдоль руки: при подъёме и опускании — вслед за ней, а не в курсор
+            Vector2 drawAim = (_armRotation + MathHelper.PiOver2).ToRotationVector2();
+            float pop = SoAEasing.BackOut(RaiseProgress);
+            float lowering = Lowering ? LowerProgress : 0f;
+            float fade = 1f - lowering;
+            float scale = SpearScale * pop * MathHelper.Lerp(1f, 0.7f, lowering);
+
+            // На зарядке копьё оттягивается к телу — замах перед выстрелом
+            float pullback = Charged || Lowering ? 0f : ChargePullback * SoAEasing.QuadIn(Power);
+            Vector2 handPos = player.GetFrontHandPosition(Player.CompositeArmStretchAmount.Full, _armRotation)
+                - drawAim * pullback;
             Vector2 drawPos = handPos - Main.screenPosition;
 
             SpriteEffects fx = player.direction == -1 ? SpriteEffects.FlipVertically : SpriteEffects.None;
-            float spriteRot = Projectile.rotation + MathHelper.PiOver4 * player.direction;
+            float spriteRot = drawAim.ToRotation() + MathHelper.PiOver4 * player.direction;
 
-            Main.EntitySpriteDraw(tex, drawPos, src, lightColor, spriteRot, origin, SpearScale, fx, 0);
+            Main.EntitySpriteDraw(tex, drawPos, src, lightColor * fade, spriteRot, origin, scale, fx, 0);
+
+            // Выстрел — весь силуэт копья вспыхивает белым
+            if (_fireFlash > 0.05f)
+            {
+                Main.EntitySpriteDraw(SilhouetteCache.Get(tex), drawPos, src,
+                    SoAVfx.Additive(Color.White) * (_fireFlash * 0.9f), spriteRot, origin, scale, fx, 0);
+            }
 
             // Свечение копья, нарастающее с зарядом (альфа = 255: аддитив гасит цвет линейно)
             if (Power > 0.2f)
             {
-                float chargeGlow = (Power - 0.2f) / 0.8f;
+                float chargeGlow = (Power - 0.2f) / 0.8f * fade;
                 float pulse = (0.3f + 0.2f * MathF.Sin(Main.GameUpdateCount * 0.45f)) * chargeGlow;
                 Color innerGlow = new Color(60, 140, 255) * pulse;
                 innerGlow.A = 255;
@@ -275,9 +377,9 @@ namespace SoA.Content.Projectiles
                 Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.Additive, null, null, null, null,
                     Main.GameViewMatrix.TransformationMatrix);
 
-                Main.EntitySpriteDraw(tex, drawPos, src, innerGlow, spriteRot, origin, 1.3f, fx, 0);
+                Main.EntitySpriteDraw(tex, drawPos, src, innerGlow, spriteRot, origin, 1.3f * pop, fx, 0);
                 Main.EntitySpriteDraw(tex, drawPos, src, outerGlow, spriteRot, origin,
-                    SpearScale + 0.1f * chargeGlow, fx, 0);
+                    scale + 0.1f * chargeGlow, fx, 0);
 
                 Main.spriteBatch.End();
                 Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, null, null, null, null,
@@ -285,9 +387,9 @@ namespace SoA.Content.Projectiles
             }
 
             // Орб зарядки на наконечнике + вспышка выстрела
-            if (_charge > 0)
+            if (_charge > 0 && !Lowering)
             {
-                Vector2 tipPos = SpearTip(player, _aim) - Main.screenPosition;
+                Vector2 tipPos = TipFrom(handPos, drawAim, scale) - Main.screenPosition;
                 float glowPulse = (0.8f + 0.2f * MathF.Sin(Main.GameUpdateCount * 0.3f)) * Power;
                 Texture2D glowTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/BeamDistortion").Value;
 

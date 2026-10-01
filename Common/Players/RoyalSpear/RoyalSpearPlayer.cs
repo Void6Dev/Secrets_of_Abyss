@@ -3,6 +3,7 @@ using Terraria;
 using Terraria.Audio;
 using Terraria.ID;
 using Terraria.ModLoader;
+using SoA.Common.Utils;
 
 namespace SoA.Common.Players
 {
@@ -106,6 +107,17 @@ namespace SoA.Common.Players
             if (spear.spriteDirection == -1)
                 owner.itemRotation += MathHelper.Pi;
         }
+
+        // Вынос копья в замахе (ПКМ и ЛКМ): отходит назад быстро в начале и с замедлением
+        // к пределу — как дубины, а не равномерно
+        public static float PulledReach(float holdDistance, float pullbackDistance, float power)
+            => holdDistance - pullbackDistance * SoAEasing.CircOut(power);
+
+        // Натуга замаха: копьё мелко дрожит с ростом силы, набитое до предела — заметно
+        public static float StrainShake(float power, int heldTicks)
+            => power >= 1f
+                ? Main.rand.NextFloat(-1.2f, 1.2f)
+                : (float)System.Math.Sin(heldTicks * 1.9f) * 0.8f * power;
 
         // Шкалу набивает любой урон от копья — удары ЛКМ и брошенное копьё
         public void AddSlamDamage(int damage)

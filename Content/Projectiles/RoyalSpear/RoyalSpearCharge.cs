@@ -8,6 +8,7 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
 using SoA.Common.Players;
+using SoA.Common.Utils;
 
 namespace SoA.Content.Projectiles
 {
@@ -40,7 +41,12 @@ namespace SoA.Content.Projectiles
         private const float ArcLength = 70f;
         private const float ArcBow = 11f;
 
+        // Копьё «выпрыгивает» в руку, набитый замах вспыхивает силуэтом (общее со шквалом ЛКМ)
+        public const int PopTicks = 6;
+        public const int FlashTicks = 12;
+
         private bool fullChargeAnnounced;
+        private int _flash;
 
         public override string Texture => "SoA/Content/Projectiles/RoyalSpear/RoyalSpearProjectile";
 
@@ -98,11 +104,14 @@ namespace SoA.Content.Projectiles
             // Счётчик крутят все стороны: иначе на чужих экранах копьё копило бы силу
             // только в тики, когда владелец повернул прицел и прислал пакет
             Projectile.ai[0]++;
+            if (_flash > 0)
+                _flash--;
 
             HoldInHand(owner);
             if (!fullChargeAnnounced && Power >= 1f)
             {
                 fullChargeAnnounced = true;
+                _flash = FlashTicks;
                 EmitReadyBurst(Projectile.Center);
             }
             EmitGatherDust(Projectile.Center, Power);
@@ -112,10 +121,9 @@ namespace SoA.Content.Projectiles
 
         private void HoldInHand(Player owner)
         {
-            // Дрожь набитого до предела замаха
-            float shake = Power >= 1f ? Main.rand.NextFloat(-1.2f, 1.2f) : 0f;
             RoyalSpearPlayer.HoldSpearInHand(owner, Projectile, Aim,
-                HoldDistance - PullbackDistance * Power + shake);
+                RoyalSpearPlayer.PulledReach(HoldDistance, PullbackDistance, Power)
+                + RoyalSpearPlayer.StrainShake(Power, (int)Projectile.ai[0]));
         }
 
         // Эффекты замаха общие для броска ПКМ и шквала ЛКМ (RoyalSpearFlurry): игрок
@@ -163,9 +171,13 @@ namespace SoA.Content.Projectiles
                 return;
             }
 
+            // Бросок уходит из руки, оттуда, где копьё было в замахе; рука в стене — из центра
             float speed = MathHelper.Lerp(MinThrowSpeed, MaxThrowSpeed, power);
+            Vector2 from = Collision.CanHitLine(owner.MountedCenter, 1, 1, Projectile.Center, 1, 1)
+                ? Projectile.Center
+                : owner.MountedCenter;
             Projectile.NewProjectile(Projectile.GetSource_FromThis(),
-                owner.MountedCenter, Aim * speed, ModContent.ProjectileType<RoyalSpearThrown>(),
+                from, Aim * speed, ModContent.ProjectileType<RoyalSpearThrown>(),
                 damage, Projectile.knockBack, Projectile.owner);
 
             SoundEngine.PlaySound(SoundID.Item1 with { Pitch = -0.2f + 0.4f * power }, owner.Center);
@@ -199,11 +211,27 @@ namespace SoA.Content.Projectiles
             Vector2 origin = new(tex.Width / 2f, tex.Height - RoyalSpearProjectile.GripOffset);
             Vector2 drawPos = Projectile.Center - Main.screenPosition;
 
+            float scale = Projectile.scale * PopScale(Projectile.ai[0]);
+
             DrawChargeGlow(Projectile, tex, drawPos, origin, Power, Aim);
 
             Main.EntitySpriteDraw(tex, drawPos, null, Projectile.GetAlpha(lightColor),
-                Projectile.rotation, origin, Projectile.scale, SpriteEffects.None, 0);
+                Projectile.rotation, origin, scale, SpriteEffects.None, 0);
+            DrawFlash(Projectile, tex, drawPos, origin, scale, _flash / (float)FlashTicks);
             return false;
+        }
+
+        // Копьё «выпрыгивает» в руку в первые тики замаха
+        public static float PopScale(float heldTicks) => SoAEasing.BackOut(Math.Min(heldTicks / PopTicks, 1f));
+
+        // Белая вспышка силуэта: замах набит (или прибавил ступень шквала). strength 0..1
+        public static void DrawFlash(Projectile spear, Texture2D tex, Vector2 drawPos, Vector2 origin, float scale, float strength)
+        {
+            if (strength <= 0f)
+                return;
+            float flash = SoAEasing.QuadIn(strength);
+            Main.EntitySpriteDraw(SilhouetteCache.Get(tex), drawPos, null, SoAVfx.Additive(Color.White) * (flash * 1.3f),
+                spear.rotation, origin, scale, SpriteEffects.None, 0);
         }
 
         // Пока копится — синий ореол по силуэту, на полном заряде вдоль древка уже

@@ -8,15 +8,19 @@ using Terraria.Graphics.Shaders;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
+using SoA.Common.Graphics.Particles;
+using SoA.Common.Utils;
 using SoA.Content.Buffs;
 
 namespace SoA.Content.Projectiles
 {
     // Огненное торнадо Scythe of Fire Storm: летит по траектории запуска,
     // притягивает и жжёт врагов, плавно затухает; об блоки не проходит.
-    // Коснувшись земли, едет по ней в сторону полёта; стена гасит вихрь.
-    // Коснувшись воды, превращается в паровой гейзер: не жжёт,
+    // Коснувшись земли, едет по ней в сторону полёта, уступы до двух блоков перешагивает;
+    // стена гасит вихрь. Коснувшись воды, превращается в паровой гейзер: не жжёт,
     // зато мощно подбрасывает врагов и живёт меньше.
+    // Взмах Косы сквозь вихрь подпитывает его (Feed): жизнь продлевается, вихрь
+    // разворачивается к курсору. Размер от подпитки не растёт.
     // ai[0]: сила заряда 0..1 — масштаб вихря и радиус притяжения.
     // ai[1]: 0 — полёт, ±1 — едет по земле в эту сторону.
     public class FireTornadoProjectile : ModProjectile
@@ -24,14 +28,16 @@ namespace SoA.Content.Projectiles
         // Спрайт лежит рядом с кодом в папке владельца, а не по пути пространства имён
         public override string Texture => "SoA/Content/Projectiles/ScytheOfFireStorm/FireTornadoProjectile";
 
+        public const int PhysicalSize = 36;
+
         private const int Lifetime = 300;
         private const int WallFadeTicks = 45; // остаток жизни после удара в стену
+        private const float MaxStepUp = 34f;  // уступ, который вихрь на земле перешагивает
         private const int SteamLifetimeCap = 200;   // пар живёт меньше огня
         private const float SteamLiftMultiplier = 2.2f;
         private const float SteamMaxLiftSpeed = 8f;
         private const float SteamPullRadiusFactor = 0.8f;
 
-        private bool _steam = false;
         private const int HitCooldownTicks = 12;
         private const float CruiseSpeed = 1.4f;   // крейсерский дрейф после броска
         private const float LaunchDecay = 0.94f;  // торможение стартового рывка
@@ -46,10 +52,40 @@ namespace SoA.Content.Projectiles
         private const float BaseDrawWidth = 190f;
         private const float BaseDrawHeight = 270f;
 
+        // Общий множитель размера на всех ступенях заряда: тело, зона урона, притяжение
+        private const float SizeScale = 0.65f;
+        private const int BirthTicks = 14;          // вихрь вырастает из взмаха, а не появляется целым
+        private const int FeedLifeBonus = 90;
+        private const float FeedLaunchSpeed = 7f;
+
+        // Огненные ленты вокруг воронки
+        private const int RibbonStrands = 2;
+        private const float RibbonHeat = 0.4f;
+        private const int RibbonPoints = 28;
+        private const float RibbonTurns = 1.6f;
+        private const float RibbonSpinSpeed = 4.5f;
+        private const float RibbonWidth = 10f;
+        private const float RibbonOrbit = 1.12f;   // ленты вьются чуть снаружи силуэта, а не внутри тела
+        private const float RibbonFromH = 0.06f;   // у самой земли и над устьем тела нет — ленты там не нужны
+        private const float RibbonToH = 0.9f;
+
+        private static readonly Color FlameGlow = new(255, 150, 50, 0);
+        private static readonly Color AshColor = new(60, 45, 40);
+
+        private bool _steam;
+        // Счётчик подпиток приходит по сети; его рост — сигнал всем клиентам показать вспышку
+        private byte _feedCount;
+        private byte _shownFeedCount;
+
         private float ChargeRatio => Projectile.ai[0];
         private ref float GroundDir => ref Projectile.ai[1];
-        private float Scale => MathHelper.Lerp(0.65f, 1.15f, ChargeRatio);
+        private ref float Age => ref Projectile.localAI[0];
+
+        private float Birth => SoAEasing.BackOut(Math.Min(Age / BirthTicks, 1f));
+        private float Scale => MathHelper.Lerp(0.65f, 1.15f, ChargeRatio) * SizeScale * Birth;
         private float LifeProgress => 1f - Projectile.timeLeft / (float)Lifetime;
+
+        public bool CanBeFed => !_steam;
 
         // Воронка «стоит» на нижней кромке хитбокса: центр визуала и зоны урона выше точки касания
         private Vector2 VortexCenter => Projectile.Bottom - new Vector2(0f, BaseVortexHeight * Scale / 2f);
@@ -58,8 +94,8 @@ namespace SoA.Content.Projectiles
         {
             // Физический хитбокс маленький: им вихрь цепляется за тайлы,
             // а зона урона задаётся отдельно в Colliding
-            Projectile.width = 36;
-            Projectile.height = 36;
+            Projectile.width = PhysicalSize;
+            Projectile.height = PhysicalSize;
             Projectile.friendly = true;
             Projectile.hostile = false;
             Projectile.DamageType = DamageClass.Magic;
@@ -73,6 +109,13 @@ namespace SoA.Content.Projectiles
 
         public override void AI()
         {
+            Age++;
+            if (_feedCount != _shownFeedCount)
+            {
+                _shownFeedCount = _feedCount;
+                FeedEffects();
+            }
+
             if (!_steam && TouchesWater())
                 ConvertToSteam();
 
@@ -93,6 +136,8 @@ namespace SoA.Content.Projectiles
             SpawnVortexDust();
             if (_steam)
                 SpawnSteamPuffs();
+            else
+                SpawnFireDetails();
 
             float glow = 1f - LifeProgress * 0.7f;
             if (_steam)
@@ -100,6 +145,8 @@ namespace SoA.Content.Projectiles
             else
                 Lighting.AddLight(VortexCenter, 1.4f * glow, 0.6f * glow, 0.1f * glow);
         }
+
+        #region Вода
 
         private bool TouchesWater()
         {
@@ -139,6 +186,58 @@ namespace SoA.Content.Projectiles
                 steam.noGravity = Main.rand.NextBool();
             }
         }
+
+        #endregion
+
+        #region Подпитка
+
+        // Вся воронка: зона урона и цель подпитки взмахом Косы
+        public Rectangle VortexArea
+        {
+            get
+            {
+                int w = (int)(BaseVortexWidth * Scale);
+                int h = (int)(BaseVortexHeight * Scale);
+                Vector2 center = VortexCenter;
+                return new Rectangle((int)(center.X - w / 2f), (int)(center.Y - h / 2f), w, h);
+            }
+        }
+
+        // Только у владельца (его взмах); остальные узнают по netUpdate и счётчику подпиток
+        public void Feed(Vector2 swingDirection)
+        {
+            Projectile.timeLeft = Math.Min(Projectile.timeLeft + FeedLifeBonus, Lifetime);
+
+            // Взмах задаёт новый курс: по земле — сторону, в полёте — новый бросок
+            if (GroundDir != 0f)
+                GroundDir = swingDirection.X >= 0f ? 1f : -1f;
+            else
+                Projectile.velocity = swingDirection.SafeNormalize(Vector2.UnitX) * FeedLaunchSpeed;
+
+            _feedCount++;
+            Projectile.netUpdate = true;
+        }
+
+        private void FeedEffects()
+        {
+            if (Main.dedServ)
+                return;
+
+            SoundEngine.PlaySound(SoundID.Item74 with { Volume = 0.7f, Pitch = 0.2f }, VortexCenter);
+            SoundEngine.PlaySound(SoundID.Item34 with { Volume = 0.8f, Pitch = -0.3f }, VortexCenter);
+            SoAParticles.SpawnGlow(VortexCenter, Vector2.Zero, FlameGlow, 40f, 150f, 16);
+            SoAParticles.AddLight(VortexCenter, new Color(255, 140, 40), 2.5f, 20);
+
+            // Языки пламени срываются с воронки по кругу
+            for (int i = 0; i < 20; i++)
+            {
+                float angle = MathHelper.TwoPi * i / 20f;
+                Vector2 velocity = angle.ToRotationVector2() * Main.rand.NextFloat(3f, 7f) - Vector2.UnitY * 2f;
+                SoAParticles.SpawnStreak(VortexCenter, velocity, FlameGlow, 2.2f, 0.1f, 22);
+            }
+        }
+
+        #endregion
 
         private void PullEnemies()
         {
@@ -182,6 +281,8 @@ namespace SoA.Content.Projectiles
                     npc.velocity *= 0.94f;
             }
         }
+
+        #region Частицы
 
         private void SpawnVortexDust()
         {
@@ -232,6 +333,31 @@ namespace SoA.Content.Projectiles
             }
         }
 
+        // Угли с макушки и пепел, который вихрь поднимает с земли
+        private void SpawnFireDetails()
+        {
+            if (Main.dedServ)
+                return;
+
+            float fade = 1f - LifeProgress;
+            float vortexHeight = BaseVortexHeight * Scale;
+            Vector2 crown = VortexCenter - new Vector2(0f, vortexHeight * 0.45f);
+
+            if (Main.rand.NextFloat() < 0.4f * fade)
+            {
+                Vector2 from = crown + new Vector2(Main.rand.NextFloat(-50f, 50f) * Scale, 0f);
+                Vector2 velocity = new(Main.rand.NextFloat(-3f, 3f), -Main.rand.NextFloat(2f, 5f));
+                SoAParticles.SpawnStreak(from, velocity, FlameGlow, 1.8f, 0.04f, 30, 2.4f);
+            }
+
+            if (GroundDir != 0f && Main.rand.NextFloat() < 0.5f * fade)
+            {
+                Vector2 from = Projectile.Bottom + new Vector2(Main.rand.NextFloat(-40f, 40f) * Scale, -4f);
+                Vector2 velocity = new(Main.rand.NextFloat(-1.5f, 1.5f), -Main.rand.NextFloat(0.5f, 1.5f));
+                SoAParticles.SpawnSmoke(from, velocity, AshColor, 10f, 34f * Scale, 0.35f, 45);
+            }
+        }
+
         // Клубящийся султан пара над колонной: пухлые облака всходят с макушки
         // шейдерной колонны, расходятся вширь и тают — то, чего не даёт плоский квад
         private void SpawnSteamPuffs()
@@ -275,20 +401,29 @@ namespace SoA.Content.Projectiles
             }
         }
 
+        #endregion
+
+        #region Урон и столкновения
+
         // Зона урона — вся воронка, а не маленький физический хитбокс
-        public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
-        {
-            int w = (int)(BaseVortexWidth * Scale);
-            int h = (int)(BaseVortexHeight * Scale);
-            Vector2 center = VortexCenter;
-            Rectangle vortex = new((int)(center.X - w / 2f), (int)(center.Y - h / 2f), w, h);
-            return vortex.Intersects(targetHitbox);
-        }
+        public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox) => VortexArea.Intersects(targetHitbox);
 
         public override bool OnTileCollide(Vector2 oldVelocity)
         {
-            // Стена по ходу движения — вихрь догорает на месте
-            if (Projectile.velocity.X != oldVelocity.X)
+            bool hitFloor = Projectile.velocity.Y != oldVelocity.Y && oldVelocity.Y > 0f;
+            bool hitWall = Projectile.velocity.X != oldVelocity.X;
+
+            // Коснулся земли — дальше едет по ней в сторону полёта
+            if (hitFloor && GroundDir == 0f)
+            {
+                GroundDir = oldVelocity.X != 0f
+                    ? Math.Sign(oldVelocity.X)
+                    : Main.player[Projectile.owner].direction;
+                Projectile.netUpdate = true;
+            }
+
+            // Ступенька или угол склона — перешагнуть; стена по ходу — вихрь догорает на месте
+            if (hitWall && !SoAPhysics.TryStepUp(Projectile, oldVelocity, MaxStepUp))
             {
                 Projectile.velocity = Vector2.Zero;
                 GroundDir = 0f;
@@ -299,17 +434,7 @@ namespace SoA.Content.Projectiles
             }
 
             if (Projectile.velocity.Y != oldVelocity.Y)
-            {
-                // Коснулся земли — дальше едет по ней в сторону полёта
-                if (oldVelocity.Y > 0f && GroundDir == 0f)
-                {
-                    GroundDir = oldVelocity.X != 0f
-                        ? Math.Sign(oldVelocity.X)
-                        : Main.player[Projectile.owner].direction;
-                    Projectile.netUpdate = true;
-                }
                 Projectile.velocity.Y = 0f;
-            }
             return false;
         }
 
@@ -323,15 +448,27 @@ namespace SoA.Content.Projectiles
         public override void SendExtraAI(BinaryWriter writer)
         {
             writer.Write(_steam);
+            writer.Write(_feedCount);
         }
 
         public override void ReceiveExtraAI(BinaryReader reader)
         {
             _steam = reader.ReadBoolean();
+            _feedCount = reader.ReadByte();
         }
+
+        #endregion
+
+        #region Отрисовка
 
         public override bool PreDraw(ref Color lightColor)
         {
+            if (!_steam)
+            {
+                DrawGroundGlow();
+                DrawRibbons(front: false);
+            }
+
             Texture2D quadTex = SoAVfx.Quad;
             Texture2D noiseTex = ModContent.Request<Texture2D>("SoA/Assets/Textures/WaveNoise").Value;
             Vector2 pos = VortexCenter - Main.screenPosition;
@@ -349,16 +486,94 @@ namespace SoA.Content.Projectiles
             Main.graphics.GraphicsDevice.Textures[1] = noiseTex;
             Main.graphics.GraphicsDevice.SamplerStates[1] = SamplerState.LinearWrap;
 
-            // Лёгкий наклон по ходу полёта
-            float tilt = MathHelper.Clamp(Projectile.velocity.X * 0.02f, -0.18f, 0.18f);
-            Main.EntitySpriteDraw(quadTex, pos, null, Color.White, tilt, quadTex.Size() / 2f,
+            Main.EntitySpriteDraw(quadTex, pos, null, Color.White, Tilt, quadTex.Size() / 2f,
                 new Vector2(BaseDrawWidth * Scale / quadTex.Width, BaseDrawHeight * Scale / quadTex.Height),
                 SpriteEffects.None, 0);
 
             Main.spriteBatch.End();
             Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, null, null, null, null,
                 Main.GameViewMatrix.TransformationMatrix);
+
+            if (!_steam)
+                DrawRibbons(front: true);
             return false;
         }
+
+        // Лёгкий наклон по ходу полёта
+        private float Tilt => MathHelper.Clamp(Projectile.velocity.X * 0.02f, -0.18f, 0.18f);
+
+        // Раскалённое пятно под вихрем, пока он едет по земле
+        private void DrawGroundGlow()
+        {
+            if (GroundDir == 0f)
+                return;
+
+            float fade = 1f - LifeProgress;
+            float size = BaseVortexWidth * Scale * 1.4f;
+            SoAVfx.DrawTintedGlow(Main.spriteBatch, Projectile.Bottom, new Vector2(size, size * 0.2f),
+                FlameGlow * (0.7f * fade));
+        }
+
+        // Огненные ленты спиралью вокруг воронки. Дальняя половина витка рисуется под телом
+        // вихря и тусклее, ближняя — поверх: спираль читается объёмной
+        private void DrawRibbons(bool front)
+        {
+            float fade = (1f - LifeProgress) * Birth;
+            float height = BaseDrawHeight * Scale; // по высоте квада шейдера, а не зоны урона
+            float time = Main.GlobalTimeWrappedHourly * RibbonSpinSpeed;
+            Vector2 center = VortexCenter;
+            Span<Vector2> run = stackalloc Vector2[RibbonPoints];
+
+            for (int strand = 0; strand < RibbonStrands; strand++)
+            {
+                float phase = MathHelper.TwoPi * strand / RibbonStrands;
+                int count = 0;
+                float runStartH = 0f;
+
+                for (int i = 0; i <= RibbonPoints; i++)
+                {
+                    bool end = i == RibbonPoints;
+                    float h = MathHelper.Lerp(RibbonFromH, RibbonToH, i / (float)(RibbonPoints - 1));
+                    float angle = time + phase + h * RibbonTurns * MathHelper.TwoPi;
+                    bool isFront = Math.Sin(angle) > 0f;
+
+                    if (!end && isFront == front)
+                    {
+                        if (count == 0)
+                            runStartH = h;
+                        float radius = FunnelHalfWidth(h) * RibbonOrbit;
+                        var offset = new Vector2((float)Math.Cos(angle) * radius, height * (0.5f - h));
+                        run[count++] = center + offset.RotatedBy(Tilt);
+                        continue;
+                    }
+
+                    // Кусок спирали с одной стороны кончился — рисуем его отдельной лентой
+                    if (count >= 2)
+                        DrawRibbonRun(run[..count], runStartH, h, fade * (front ? 1f : 0.5f));
+                    count = 0;
+                }
+            }
+        }
+
+        // Полуширина воронки на высоте h (0 — земля, 1 — устье) в пикселях мира: тот же профиль,
+        // что halfWidth в TornadoPS (там y = 1 - h и доля от ширины квада)
+        private float FunnelHalfWidth(float h)
+            => MathHelper.Lerp(0.46f, 0.10f, (float)Math.Pow(1f - h, 1.1)) * BaseDrawWidth * Scale;
+
+        private void DrawRibbonRun(ReadOnlySpan<Vector2> points, float fromH, float toH, float strength)
+        {
+            float width = RibbonWidth * Scale;
+            SoATrail.Draw(points,
+                progress =>
+                {
+                    // Лента тоньше к макушке и сходит на нет на концах куска
+                    float h = MathHelper.Lerp(fromH, toH, progress);
+                    return width * (1f - 0.5f * h) * (float)Math.Sin(MathHelper.Pi * progress);
+                },
+                progress => TrailStyle.MagmaBody(MathHelper.Lerp(fromH, toH, progress) * 0.8f, RibbonHeat) * strength,
+                TrailStyle.Magma);
+        }
+
+        #endregion
     }
 }

@@ -2,7 +2,6 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.Audio;
-using Terraria.Graphics.CameraModifiers;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
@@ -119,8 +118,8 @@ namespace SoA.Content.Projectiles
             float punch = CameraPunch;
             if (punch > 0f && Main.LocalPlayer.Distance(at) < 1000f)
             {
-                Main.instance.CameraModifiers.Add(new PunchCameraModifier(at, Main.rand.NextVector2Unit(),
-                    punch, 8f, 16, 1000f, "SoA:" + Name));
+                ScreenShake.Punch(at, Main.rand.NextVector2Unit(),
+                    punch, 8f, 16, 1000f, "SoA:" + Name);
             }
             if (intensity > ShockwaveThreshold)
                 RoarShockwaveFx.Trigger(at, 26f, 0.35f + 0.35f * intensity);

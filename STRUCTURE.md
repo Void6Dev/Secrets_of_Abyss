@@ -52,11 +52,13 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 | `Players` | ModPlayer'ы; `RoyalSpear/` — состояние копья и полоска приливного удара |
 | `Systems` | `SoASystem` (регистрация шейдеров), `DownedBossSystem` |
 | `Systems/Worldgen` | генерация: проходы, `TideOcean/` — океан Прилива Теней |
-| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `SpriteSpine` (кадр спрайта, натянутый на гнущийся позвоночник — угорь), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/`, `Atmosphere/` — атмосфера Прилива Теней (экранный фильтр воды, фоновые частицы) |
+| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `ScreenShake` (вся тряска экрана — только через него, её выключает конфиг), `SpriteSpine` (кадр спрайта, натянутый на гнущийся позвоночник — угорь), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/`, `Atmosphere/` — атмосфера Прилива Теней (экранный фильтр воды, фоновые частицы) |
 | `UI/DevMenu`, `UI/StructureTool` | самодельный интерфейс инструментов разработки |
 | `UI` (плоско) | `SoAHudDraw`, `ToolText` — общие примитивы рисования интерфейса |
-| `Utils` | `SoACombat` (проверка «промок»), структуры, шум, фильтры |
-| `Config`, `CustomClasses`, `Backgrounds` | по одному файлу на назначение |
+| `Utils` | `SoACombat` (проверка «промок»), `SoAEasing` (кривые плавности), структуры, шум, фильтры |
+| `Weapons` | общие основы оружия: `ClubItem` + `ClubProjectile` — тяжёлое оружие «замах → зарядка по ступеням → взмах» (Зубодробилка, Коса огненной бури); `HeldProjectiles` — удержание снаряда в руке и зеркалирование рук |
+| `Config` | `SoAClientConfig` — настройки игрока (тряска экрана), `SoADevConfig` — для разработки |
+| `CustomClasses`, `Backgrounds` | по одному файлу на назначение |
 
 ### Assets — то, что не привязано к классу
 
