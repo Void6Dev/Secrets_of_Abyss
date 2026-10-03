@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
@@ -16,6 +18,14 @@ namespace SoA.Content.Worldgen
     {
         public int Step;     // 1 — Королевский Краб, 2 — Стена Плоти, 3 — Плантера, 4 — Мунлорд
         public int X, Y, Width, Height;
+
+        // Левый верхний тайл замка 3x3 — он стоит посередине прохода
+        public readonly Point LockOrigin => new(X + Width / 2 - 1, Y + Height / 2 - 1);
+
+        public readonly Vector2 LockCenter => (LockOrigin.ToVector2() + new Vector2(1.5f)) * 16f;
+
+        // Низ прохода: туда уходит вода, когда печать снимают
+        public readonly Vector2 PassageBottom => new((X + Width / 2f) * 16f, (Y + Height) * 16f);
     }
 
     // Обмеры биома, снятые при генерации. Границы и глубины зон у каждого мира свои,
@@ -35,10 +45,25 @@ namespace SoA.Content.Worldgen
 
         public static List<TideSealSite> SealSites = new();
 
+        // Точная граница следа со стороны суши, по строке: сдвиг от EdgeX вглубь суши.
+        // ZoneAt режет зону прямоугольником по самой широкой её строке, и в верх зоны
+        // попадают ванильные пещеры за стенкой чаши. Где это важно (давление),
+        // смотрим сюда. В мирах до таблицы она пустая
+        public static int InlandEdgeTopY;
+        public static int[] InlandEdge = Array.Empty<int>();
+
+        public static bool HasExactFootprint => InlandEdge.Length > 0;
+
         // Направление вглубь суши от края мира
         public static int InlandDir => OceanSide == -1 ? 1 : -1;
 
         public static bool HasBounds => OceanSide != 0 && ZoneBottomY[ZoneCount - 1] > WaterTopY;
+
+        public static bool Contains(Vector2 worldPosition)
+        {
+            Point tile = worldPosition.ToTileCoordinates();
+            return ZoneAt(tile.X, tile.Y) != 0;
+        }
 
         // В какой зоне точка: 0 — вне биома, 1..5 по возрастанию глубины
         public static int ZoneAt(int tileX, int tileY)
@@ -56,6 +81,18 @@ namespace SoA.Content.Worldgen
                     return offset <= ZoneWidth[zone] ? zone + 1 : 0;
             }
             return 0;
+        }
+
+        // Внутри ли точка самого биома, а не просто в прямоугольнике его зоны
+        public static bool InsideFootprint(int tileX, int tileY)
+        {
+            if (ZoneAt(tileX, tileY) == 0)
+                return false;
+            if (InlandEdge.Length == 0)
+                return true;
+
+            int row = Math.Clamp(tileY - InlandEdgeTopY, 0, InlandEdge.Length - 1);
+            return (tileX - EdgeX) * InlandDir <= InlandEdge[row];
         }
 
         // Непрерывная глубина: 0 — зеркало воды, 1 — дно зоны I, ... 5 — дно Бездны.
@@ -81,6 +118,8 @@ namespace SoA.Content.Worldgen
             Array.Clear(ZoneBottomY);
             Array.Clear(ZoneWidth);
             SealSites = new List<TideSealSite>();
+            InlandEdgeTopY = 0;
+            InlandEdge = Array.Empty<int>();
         }
 
         public override void SaveWorldData(TagCompound tag)
@@ -104,6 +143,8 @@ namespace SoA.Content.Worldgen
                 seals.Add(site.Height);
             }
             tag["tideSeals"] = seals;
+            tag["tideInlandEdgeTopY"] = InlandEdgeTopY;
+            tag["tideInlandEdge"] = new List<int>(InlandEdge);
         }
 
         public override void LoadWorldData(TagCompound tag)
@@ -114,6 +155,9 @@ namespace SoA.Content.Worldgen
 
             CopyInto(tag.GetList<int>("tideZoneBottomY"), ZoneBottomY);
             CopyInto(tag.GetList<int>("tideZoneWidth"), ZoneWidth);
+
+            InlandEdgeTopY = tag.GetInt("tideInlandEdgeTopY");
+            InlandEdge = tag.GetList<int>("tideInlandEdge")?.ToArray() ?? Array.Empty<int>();
 
             SealSites = new List<TideSealSite>();
             var seals = tag.GetList<int>("tideSeals");
@@ -158,6 +202,12 @@ namespace SoA.Content.Worldgen
                 writer.Write((byte)site.Width);
                 writer.Write((byte)site.Height);
             }
+
+            // Сдвиги кромки — сотни тайлов, в short помещаются с запасом
+            writer.Write(InlandEdgeTopY);
+            writer.Write((ushort)InlandEdge.Length);
+            foreach (int edge in InlandEdge)
+                writer.Write((short)edge);
         }
 
         public override void NetReceive(BinaryReader reader)
@@ -184,6 +234,11 @@ namespace SoA.Content.Worldgen
                     Height = reader.ReadByte()
                 });
             }
+
+            InlandEdgeTopY = reader.ReadInt32();
+            InlandEdge = new int[reader.ReadUInt16()];
+            for (int i = 0; i < InlandEdge.Length; i++)
+                InlandEdge[i] = reader.ReadInt16();
         }
     }
 

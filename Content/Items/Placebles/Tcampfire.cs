@@ -30,7 +30,7 @@ namespace SoA.Content.Items.Placebles
         {
             CreateRecipe()
                 .AddIngredient(ItemID.Wood, 10)
-                .AddIngredient(ModContent.ItemType<Ttorch>(), 3)
+                .AddIngredient(ModContent.ItemType<Ttorch>(), 5)
                 .Register();
         }
     }

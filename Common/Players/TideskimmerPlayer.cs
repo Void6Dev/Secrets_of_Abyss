@@ -132,9 +132,7 @@ namespace SoA.Common.Players
             _holdTicks = 0;
             _ignoreHeldJump = Player.controlJump;
             _wasHoldingJump = Player.controlJump;
-
-            if (!Main.dedServ && Player.velocity.Y > 5f)
-                EntrySplash();
+            // Всплеск входа общий для всех — TideWaterFeelPlayer
         }
 
         private void UpdateUnderwater()
@@ -311,16 +309,6 @@ namespace SoA.Common.Players
                     Main.rand.NextFloat(3f, 6f), BubbleColor, 50);
             }
             SoundEngine.PlaySound(SoundID.SplashWeak with { Volume = 0.4f, Pitch = 0.4f }, Player.Bottom);
-        }
-
-        private void EntrySplash()
-        {
-            for (int i = 0; i < 12; i++)
-            {
-                SoAParticles.SpawnBubble(Player.Center + Main.rand.NextVector2Circular(12f, 12f),
-                    new Vector2(Main.rand.NextFloatDirection(), Main.rand.NextFloat(0.5f, 2f)),
-                    Main.rand.NextFloat(3f, 8f), BubbleColor, 60);
-            }
         }
 
         // Вылет из воды: столб брызг вверх, веер капель в стороны, вспышка

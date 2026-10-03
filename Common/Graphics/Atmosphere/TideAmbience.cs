@@ -16,6 +16,9 @@ namespace SoA.Common.Graphics.Atmosphere
     //   • Plankton — биолюминесценция: едва тлеет, вспыхивает и расступается, когда сквозь
     //                неё плывут игрок или существа. Сильно вспыхнувший чуть светит на мир;
     //   • Eye      — пара красных точек в темноте Разлома: моргает, гаснет, если подплыть;
+    //   • Wake     — светящийся след за пловцами: ночью и в тёмной глубине всё, что движется
+    //                в воде, оставляет за собой искры, которые разгораются и медленно гаснут;
+    //                удар по существу в воде вспыхивает облаком таких искр (Flash);
     //   • источники пузырей на дне — струйки, которые бьют какое-то время и затихают.
     // Плотность каждого вида берётся из профиля TideAtmosphere по глубине игрока.
     //
@@ -64,11 +67,34 @@ namespace SoA.Common.Graphics.Atmosphere
         private const float WakeDrag = 0.018f;          // доля скорости пловца, которую перенимает частица
         private const float PlanktonScatter = 0.12f;    // отталкивание планктона от пловца
         private const float DriftReturnRate = 0.02f;    // возврат к своему дрейфу после толчка
+        private const float CurrentDrift = 0.6f;        // доля скорости течения, с которой его несёт
+
+        // След: сколько искр за тик на 1 px/тик скорости пловца при полном свечении
+        private const int MaxWakes = 360;
+        private const float WakePerSpeed = 0.32f;
+        private const float WakeMaxPerTick = 3f;
+        private const int WakeFlareTicks = 7;           // искра разгорается, потом долго гаснет
+        private const float WakeSparkDrag = 0.94f;
+        private const float WakeInherit = 0.08f;        // доля скорости пловца, которую уносит искра
+        private const float WakeLightThreshold = 0.45f;
+        private const float WakeLightStrength = 0.22f;
+        private const int FlashSparks = 26;
+        private static readonly Color[] WakeColors =
+        {
+            new(110, 230, 255), new(90, 200, 255), new(150, 255, 235), new(130, 160, 255),
+        };
+
+        // Когда вода светится: ночью у поверхности, а глубже первой зоны — всегда,
+        // туда солнце уже не достаёт. Ночь разгорается и гаснет плавно у краёв
+        private const double NightLength = 32400.0;
+        private const double NightRampTicks = 2400.0;
+        private const float DarkDepthStart = 0.75f;     // DepthLevel, где глубина начинает светиться сама
+        private const float DarkDepthRange = 0.5f;
 
         private const int VentScanTiles = 40;
         private static readonly Color VentBubbleColor = new(170, 215, 255);
 
-        private enum MoteKind : byte { Snow, Plankton, Eye }
+        private enum MoteKind : byte { Snow, Plankton, Eye, Wake }
 
         private struct Mote
         {
@@ -102,10 +128,15 @@ namespace SoA.Common.Graphics.Atmosphere
 
         private static readonly Mote[] _motes = new Mote[MaxMotes];
         private static int _moteCount;
-        private static readonly int[] _kindCounts = new int[3];
+        private static readonly int[] _kindCounts = new int[4];
         private static readonly Vent[] _vents = new Vent[MaxVents];
         private static int _ventCount;
         private static readonly List<Disturber> _disturbers = new(MaxDisturbers);
+
+        private static Vector2 _pullSink;
+        private static float _pullStrength;
+        private static float _pullRadius;
+        private static uint _pullTick;
 
         public override void Load()
         {
@@ -122,6 +153,7 @@ namespace SoA.Common.Graphics.Atmosphere
         {
             _moteCount = 0;
             _ventCount = 0;
+            _pullStrength = 0f;
             Array.Clear(_kindCounts);
             _disturbers.Clear();
         }
@@ -142,7 +174,139 @@ namespace SoA.Common.Graphics.Atmosphere
             UpdateVents(view);
 
             if (TideAtmosphere.IsActive)
+            {
                 SpawnAmbient(view);
+                SpawnWakes();
+            }
+
+            if (_pullTick != Main.GameUpdateCount)
+                _pullStrength = 0f;
+        }
+
+        // 0..1: насколько светится вода в этой точке. Вне биома — 0
+        public static float BioGlowAt(Vector2 worldPosition)
+        {
+            Point tile = worldPosition.ToTileCoordinates();
+            float depth = TideOfShadowsWorldData.DepthLevelAt(tile.X, tile.Y);
+            if (depth < 0f)
+                return 0f;
+
+            float dark = MathHelper.Clamp((depth - DarkDepthStart) / DarkDepthRange, 0f, 1f);
+            return Math.Max(NightFactor(), dark);
+        }
+
+        private static float NightFactor()
+        {
+            if (Main.dayTime)
+                return 0f;
+            double edge = Math.Min(Main.time, NightLength - Main.time);
+            return (float)Math.Clamp(edge / NightRampTicks, 0.0, 1.0);
+        }
+
+        // Течение к точке: всё, что плавает вокруг, тянет туда. Действует, пока его
+        // выставляют каждый тик (сцену печати ведёт TideSealCinematic)
+        public static void SetPull(Vector2 sink, float strength, float radius)
+        {
+            _pullSink = sink;
+            _pullStrength = strength;
+            _pullRadius = radius;
+            _pullTick = Main.GameUpdateCount;
+        }
+
+        private static void ApplyPull(ref Mote m)
+        {
+            if (_pullStrength <= 0f)
+                return;
+
+            Vector2 toSink = _pullSink - m.Position;
+            float distance = toSink.Length();
+            if (distance < 1f || distance > _pullRadius)
+                return;
+
+            // Ближе к воронке тянет сильнее и закручивает — вода уходит не прямо, а спиралью
+            float closeness = 1f - distance / _pullRadius;
+            Vector2 inward = toSink / distance;
+            Vector2 swirl = inward.RotatedBy(MathHelper.PiOver2);
+            m.Velocity += (inward + swirl * 0.35f * closeness) * (_pullStrength * (0.3f + closeness));
+            if (distance < 24f)
+                m.Life = Math.Min(m.Life, QuickFadeTicks);
+        }
+
+        // Вспышка от удара: облако искр, разлетающихся из точки
+        public static void Flash(Vector2 position, float strength)
+        {
+            if (Main.dedServ || !IsOpenWater(position))
+                return;
+            float glow = BioGlowAt(position);
+            if (glow <= 0f)
+                return;
+
+            int sparks = (int)(FlashSparks * strength * glow);
+            for (int i = 0; i < sparks; i++)
+            {
+                Vector2 velocity = Main.rand.NextVector2Circular(3.2f, 3.2f) * strength;
+                SpawnWake(position + Main.rand.NextVector2Circular(6f, 6f), velocity, glow * Main.rand.NextFloat(0.7f, 1.2f));
+            }
+            SoAParticles.AddLight(position, WakeColors[0], 1.4f * strength * glow, 20);
+        }
+
+        // Каждый пловец в светящейся воде сыплет искрами из-под себя, тем гуще, чем быстрее плывёт
+        private static void SpawnWakes()
+        {
+            foreach (Disturber d in _disturbers)
+            {
+                if (_kindCounts[(int)MoteKind.Wake] >= MaxWakes)
+                    return;
+                if (!IsOpenWater(d.Center))
+                    continue;
+
+                float glow = BioGlowAt(d.Center);
+                if (glow <= 0f)
+                    continue;
+
+                float speed = d.Velocity.Length();
+                float rate = Math.Min(speed * WakePerSpeed, WakeMaxPerTick) * glow;
+                int count = (int)rate + (Main.rand.NextFloat() < rate % 1f ? 1 : 0);
+                float bodyRadius = d.Radius - DisturbRadiusPx;
+
+                for (int i = 0; i < count; i++)
+                {
+                    // Из-под тела, чуть позади: след тянется за пловцом, а не вокруг него
+                    Vector2 position = d.Center - d.Velocity * Main.rand.NextFloat(0.2f, 1f)
+                        + Main.rand.NextVector2Circular(bodyRadius * 0.7f, bodyRadius * 0.7f);
+                    Vector2 velocity = d.Velocity * WakeInherit + Main.rand.NextVector2Circular(0.35f, 0.35f);
+                    SpawnWake(position, velocity, glow * d.Strength);
+                    _kindCounts[(int)MoteKind.Wake]++;
+                }
+            }
+        }
+
+        private static void SpawnWake(Vector2 position, Vector2 velocity, float intensity)
+        {
+            if (_moteCount >= MaxMotes)
+                return;
+
+            AddMote(new Mote
+            {
+                Kind = MoteKind.Wake,
+                Position = position,
+                Velocity = velocity,
+                Drift = Main.rand.NextVector2Circular(0.05f, 0.05f) - new Vector2(0f, 0.04f),
+                Phase = Main.rand.NextFloat(MathHelper.TwoPi),
+                Size = Main.rand.NextFloat(2.5f, 5f),
+                Spread = MathHelper.Clamp(intensity, 0.35f, 1.2f),
+                Color = WakeColors[Main.rand.Next(WakeColors.Length)],
+                MaxLife = Main.rand.Next(80, 170),
+            });
+        }
+
+        // Яркость искры следа: короткий разгар, затем долгое угасание
+        private static float WakeBrightness(in Mote m)
+        {
+            int age = m.MaxLife - m.Life;
+            float flare = Math.Min(age / (float)WakeFlareTicks, 1f);
+            float remaining = m.Life / (float)m.MaxLife;
+            return flare * remaining * remaining * m.Spread;
         }
 
         // Видимая часть мира с учётом зума камеры
@@ -183,6 +347,7 @@ namespace SoA.Common.Graphics.Atmosphere
             keep.Inflate((int)DespawnMarginPx, (int)DespawnMarginPx);
             Vector2 localPlayer = Main.LocalPlayer.Center;
             int lightsLeft = MaxPlanktonLights;
+            bool currentsOn = TideCurrents.Enabled;
             Array.Clear(_kindCounts);
 
             for (int i = _moteCount - 1; i >= 0; i--)
@@ -201,12 +366,23 @@ namespace SoA.Common.Graphics.Atmosphere
                     continue;
                 }
 
+                ApplyPull(ref m);
+
+                if (m.Kind == MoteKind.Wake)
+                {
+                    UpdateWake(ref m, ref lightsLeft);
+                    continue;
+                }
+
                 ApplyDisturbance(ref m);
                 m.Velocity = Vector2.Lerp(m.Velocity, m.Drift, DriftReturnRate);
                 m.Phase += m.Kind == MoteKind.Snow ? 0.02f : 0.05f;
 
                 Vector2 sway = m.Kind == MoteKind.Snow ? new Vector2((float)Math.Sin(m.Phase) * SnowSway, 0f) : Vector2.Zero;
                 m.Position += m.Velocity + sway;
+                // Течения (экспериментальная физика) видны по тому, как их несёт
+                if (currentsOn)
+                    m.Position += TideCurrents.At(m.Position) * CurrentDrift;
 
                 if (!IsOpenWater(m.Position))
                     m.Life = Math.Min(m.Life, QuickFadeTicks);
@@ -244,6 +420,25 @@ namespace SoA.Common.Graphics.Atmosphere
                 m.Excite = Math.Max(m.Excite, falloff);
                 if (distance > 0.01f)
                     m.Velocity += away / distance * (PlanktonScatter * falloff);
+            }
+        }
+
+        // Искра следа тормозит и зависает в воде, пока не погаснет; самые яркие чуть светят на мир
+        private static void UpdateWake(ref Mote m, ref int lightsLeft)
+        {
+            m.Velocity = (m.Velocity - m.Drift) * WakeSparkDrag + m.Drift;
+            m.Position += m.Velocity;
+            m.Phase += 0.15f;
+
+            if (!IsOpenWater(m.Position))
+                m.Life = Math.Min(m.Life, QuickFadeTicks / 2);
+
+            float brightness = WakeBrightness(m);
+            if (brightness > WakeLightThreshold && lightsLeft > 0 && Main.rand.NextBool(3))
+            {
+                lightsLeft--;
+                Vector3 light = m.Color.ToVector3() * (brightness * WakeLightStrength);
+                Lighting.AddLight(m.Position, light.X, light.Y, light.Z);
             }
         }
 
@@ -429,11 +624,7 @@ namespace SoA.Common.Graphics.Atmosphere
         private static bool IsOpenWater(Vector2 worldPosition)
             => SoACombat.IsInWater(worldPosition) && !IsSolid(Framing.GetTileSafely(worldPosition.ToTileCoordinates()));
 
-        private static bool InBiome(Vector2 worldPosition)
-        {
-            Point tile = worldPosition.ToTileCoordinates();
-            return TideOfShadowsWorldData.ZoneAt(tile.X, tile.Y) != 0;
-        }
+        private static bool InBiome(Vector2 worldPosition) => TideOfShadowsWorldData.Contains(worldPosition);
 
         #region Отрисовка
 
@@ -468,6 +659,8 @@ namespace SoA.Common.Graphics.Atmosphere
                 ref Mote m = ref _motes[i];
                 if (m.Kind == MoteKind.Plankton)
                     DrawPlankton(sb, glow, origin, ref m);
+                else if (m.Kind == MoteKind.Wake)
+                    DrawWake(sb, glow, origin, ref m);
                 else if (m.Kind == MoteKind.Eye)
                     DrawEyes(sb, glow, origin, ref m);
             }
@@ -504,6 +697,21 @@ namespace SoA.Common.Graphics.Atmosphere
                 SpriteEffects.None, 0f);
             sb.Draw(glow, screen, null, Color.Lerp(m.Color, Color.White, 0.5f) * brightness, 0f, origin,
                 m.Size / glow.Width, SpriteEffects.None, 0f);
+        }
+
+        // Как планктон, только ярче и с мерцанием: в разгаре ядро почти белое
+        private static void DrawWake(SpriteBatch sb, Texture2D glow, Vector2 origin, ref Mote m)
+        {
+            float brightness = WakeBrightness(m) * (0.8f + 0.2f * (float)Math.Sin(m.Phase));
+            if (brightness <= 0.01f)
+                return;
+
+            Vector2 screen = m.Position - Main.screenPosition;
+            float haloSize = m.Size * (2.5f + brightness * 2f);
+            sb.Draw(glow, screen, null, m.Color * (brightness * 0.4f), 0f, origin, haloSize / glow.Width,
+                SpriteEffects.None, 0f);
+            sb.Draw(glow, screen, null, Color.Lerp(m.Color, Color.White, 0.3f + 0.4f * brightness) * brightness, 0f,
+                origin, m.Size / glow.Width, SpriteEffects.None, 0f);
         }
 
         private static void DrawEyes(SpriteBatch sb, Texture2D glow, Vector2 origin, ref Mote m)

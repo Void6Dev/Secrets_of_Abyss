@@ -16,6 +16,44 @@ namespace SoA.Common.Systems.TideOcean
         private const int CaveFillNeighbours = 5;      // из 8 соседей твёрдых, чтобы клетка заполнилась
         private const int CaveRoundingWaterMargin = 2; // выше зеркала воды не трогаем: там поверхность
 
+        // Оболочка со стороны суши ниже первой печати перекладывается печатным камнем.
+        // Иначе зону за печатью открывали сбоку, подкопом из пещер джунглей.
+        // Идёт после смешивания пород на стыке: оно подмешивает в оболочку ванильный
+        // камень, и прочную полосу нужно класть уже поверх него. Верх зоны I не трогаем —
+        // туда и так открыт путь с поверхности моря
+        private void HardenInlandShell()
+        {
+            ushort sealstoneType = (ushort)ModContent.TileType<Sealstone_tile>();
+            int fromGy = Math.Max(_gWater, _gPortBottom - ShellThickness);
+            int toGy = Math.Min(_grid.Height - 1, _gAbyssBottom + ShellThickness);
+            int hardened = 0;
+
+            for (int gy = fromGy; gy <= toGy; gy++)
+            {
+                int y = _grid.ToWorldY(gy);
+                if (y < 20 || y >= Main.maxTilesY - 20)
+                    continue;
+
+                int edge = InlandEdgeAt(gy);
+                for (int gx = edge - ShellThickness + 1; gx <= edge; gx++)
+                {
+                    int x = _grid.ToWorldX(gx);
+                    if (gx < 0 || x < 12 || x >= Main.maxTilesX - 12 || InsideTempleOuter(gx, gy))
+                        continue;
+
+                    // Стена остаётся своей: меняется только блок
+                    Tile tile = Main.tile[x, y];
+                    ushort wall = tile.WallType;
+                    tile.ResetToType(sealstoneType);
+                    tile.LiquidAmount = 0;
+                    tile.WallType = wall;
+                    hardened++;
+                }
+            }
+
+            Log($"оболочка со стороны суши: печатный камень, строки {_topY + fromGy}..{_topY + toGy}, тайлов {hardened}");
+        }
+
         // Монолит штампуется поверх ванильных пещер, и пещера упирается в него
         // плоским срезом с прямыми углами — сразу видно, что её отрезали. Здесь
         // в полосе за следом биома вогнутые углы пещер заполняются породой соседей

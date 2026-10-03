@@ -320,8 +320,8 @@ namespace SoA.Common.Systems.TideOcean
 
         private static void PlaceSealLock(TideSealSite site, ushort sealType)
         {
-            int originX = site.X + site.Width / 2 - 1;
-            int originY = site.Y + site.Height / 2 - 1;
+            int originX = site.LockOrigin.X;
+            int originY = site.LockOrigin.Y;
 
             for (int dx = 0; dx < TideSeal_tile.SizeInTiles; dx++)
             {

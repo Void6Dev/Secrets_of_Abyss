@@ -11,7 +11,8 @@ namespace SoA.Common.Graphics.Particles
     //   • Smoke  — клубы пыли: растут, тормозят, оседают, освещены миром, НЕ светятся;
     //   • Streak — штрихи вдоль скорости: брызги воды, искры; светятся (аддитив);
     //   • Glow   — мягкое светящееся пятно, гаснет и сжимается;
-    //   • Bubble — пузырь в воде: всплывает, покачивается, лопается у поверхности.
+    //   • Bubble — пузырь в воде: всплывает, покачивается, лопается у поверхности;
+    //   • Flake  — снежинка: медленно падает, покачиваясь, тает, коснувшись блока.
     // Плюс световые импульсы: настоящий свет на мир (Lighting.AddLight) на несколько тиков —
     // вспышка удара освещает грунт и стены вокруг, а не только рисуется поверх.
     //
@@ -28,8 +29,12 @@ namespace SoA.Common.Graphics.Particles
         private const float BubbleMaxRise = 3.2f;
         private const float BubbleWobble = 0.35f;        // размах покачивания, px за тик
         private static readonly Color BubblePop = new(200, 235, 255);
+        private const float FlakeGravity = 0.03f;
+        private const float FlakeMaxFall = 1.1f;
+        private const float FlakeSway = 0.45f;           // размах покачивания, px за тик
+        private const int FlakeMeltTicks = 12;           // коснулась блока — тает за столько тиков
 
-        public enum Kind : byte { Debris, Smoke, Streak, Glow, Bubble }
+        public enum Kind : byte { Debris, Smoke, Streak, Glow, Bubble, Flake }
 
         private struct Particle
         {
@@ -158,6 +163,25 @@ namespace SoA.Common.Graphics.Particles
             p.Life = p.MaxLife = life;
         }
 
+        // Снежинка. size — диаметр в px мира. Падает медленно и покачивается, на блоке тает
+        public static void SpawnFlake(Vector2 position, Vector2 velocity, float size, Color color, int life = 120)
+        {
+            if (!TryAllocate(out int index))
+                return;
+            ref Particle p = ref _particles[index];
+            p.Kind = Kind.Flake;
+            p.Position = position;
+            p.Velocity = velocity;
+            p.Rotation = Main.rand.NextFloat(MathHelper.TwoPi);   // фаза покачивания
+            p.Spin = Main.rand.NextFloat(0.04f, 0.09f);           // частота покачивания
+            p.Size = new Vector2(size);
+            p.Color = color;
+            p.Opacity = 1f;
+            p.Gravity = FlakeGravity;
+            p.Drag = 0.99f;
+            p.Life = p.MaxLife = life;
+        }
+
         // Пузырь в воде. size — диаметр в px мира. Вне воды лопается сразу
         public static void SpawnBubble(Vector2 position, Vector2 velocity, float size, Color color, int life = 90)
         {
@@ -232,6 +256,10 @@ namespace SoA.Common.Graphics.Particles
                     if (!MoveBubble(ref p))
                         p.Life = 1; // лопнул — уйдёт на следующем тике
                 }
+                else if (p.Kind == Kind.Flake)
+                {
+                    MoveFlake(ref p);
+                }
                 else
                 {
                     p.Position += p.Velocity;
@@ -274,6 +302,22 @@ namespace SoA.Common.Graphics.Particles
             next = p.Position + p.Velocity;
             if (!Collision.SolidCollision(next - half, 4, 4))
                 p.Position = next;
+        }
+
+        // Падает с покачиванием; на блоке останавливается и тает
+        private static void MoveFlake(ref Particle p)
+        {
+            if (p.Velocity.Y > FlakeMaxFall)
+                p.Velocity.Y = FlakeMaxFall;
+
+            if (Collision.SolidCollision(p.Position - new Vector2(1f), 2, 2))
+            {
+                p.Velocity = Vector2.Zero;
+                p.Gravity = 0f;
+                p.Life = Math.Min(p.Life, FlakeMeltTicks);
+                return;
+            }
+            p.Position += p.Velocity + new Vector2((float)Math.Sin(p.Rotation) * FlakeSway, 0f);
         }
 
         // Всплывает с покачиванием; false — вышел из воды или упёрся в блок и лопнул
@@ -338,8 +382,24 @@ namespace SoA.Common.Graphics.Particles
                     DrawGlow(sb, ref p);
                 else if (p.Kind == Kind.Bubble)
                     DrawBubble(sb, ref p);
+                else if (p.Kind == Kind.Flake)
+                    DrawFlake(sb, ref p);
             }
             sb.End();
+        }
+
+        // Снежинка — мягкое пятно с ярким ядром: в темноте чуть светится, на свету белая.
+        // Плавно появляется и тает к концу жизни
+        private static void DrawFlake(SpriteBatch sb, ref Particle p)
+        {
+            float age = Age(p);
+            float alpha = Math.Min(age / 0.1f, 1f) * Math.Min((1f - age) / 0.25f, 1f) * p.Opacity;
+            Color tint = Color.Lerp(Lit(p.Position, p.Color), p.Color, 0.5f);
+
+            Texture2D tex = SoAVfx.SoftGlow;
+            Vector2 at = p.Position - Main.screenPosition;
+            sb.Draw(tex, at, null, tint * (alpha * 0.6f), 0f, tex.Size() / 2f, p.Size.X * 1.8f / tex.Width, SpriteEffects.None, 0f);
+            sb.Draw(tex, at, null, tint * alpha, 0f, tex.Size() / 2f, p.Size.X * 0.7f / tex.Width, SpriteEffects.None, 0f);
         }
 
         private static float Age(in Particle p) => 1f - p.Life / (float)p.MaxLife; // 0 → 1

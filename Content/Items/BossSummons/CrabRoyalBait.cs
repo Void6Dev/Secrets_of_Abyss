@@ -17,17 +17,18 @@ namespace SoA.Content.Items.BossSummons
         {
             Item.width = 20;
             Item.height = 22;
-            Item.maxStack = 1; // многоразовая: алтарь её не забирает
+            Item.maxStack = 9999; 
             Item.rare = ItemRarityID.Purple;
-            Item.value = Item.sellPrice(silver: 20);
+            Item.value = Item.sellPrice(silver: 50);
         }
 
         public override void AddRecipes()
         {
             CreateRecipe()
-                .AddIngredient(ModContent.ItemType<Ichthyofang>(), 5)
-                .AddIngredient(ItemID.PinkPearl, 1)
-                .AddTile(TileID.Anvils)
+                .AddIngredient(ItemID.Bowl, 1)
+                .AddIngredient(ItemID.LimeKelp, 1)
+                .AddIngredient(ItemID.BlackPearl, 3)
+                .AddTile(TileID.DemonAltar)
                 .Register();
         }
     }

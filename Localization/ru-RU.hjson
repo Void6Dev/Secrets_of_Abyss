@@ -1,6 +1,25 @@
 Mods: {
 	SoA: {
 		Items: {
+			LighthouseLamp: {
+				DisplayName: Лампа маяка
+				Tooltip:
+					'''
+					Бросает луч света, который упирается в первую скалу
+					Повесь под ней маячную цепь, чтобы поворачивать луч
+					ПКМ — зажечь или погасить
+					'''
+			}
+
+			LighthouseChain: {
+				DisplayName: Маячная цепь
+				Tooltip:
+					'''
+					Вешается под лампой маяка
+					Зажми ПКМ на цепи, чтобы повернуть луч к курсору
+					'''
+			}
+
 			Ichthyofang: {
 				// DisplayName: Ichthyofang
 				/* Tooltip:
@@ -195,11 +214,14 @@ Mods: {
 			}
 
 			FlinxHood: {
-				/* SetBonus:
+				SetBonus:
 					'''
-					Increases whip range by 30%
-					Press 2 times DOWN to turn off set bonus visual effect
-					''' */
+					Дальность кнутов +30%
+					Окутывает снежной аурой
+					Дважды нажмите {0}, чтобы включить или выключить ауру
+					'''
+				AuraOn: Снежная аура включена
+				AuraOff: Снежная аура выключена
 				// DisplayName: Flinx Hood
 				// Tooltip: Increases summon damage by 5%
 			}
@@ -283,32 +305,14 @@ Mods: {
 					''' */
 			}
 
-			PressureSigil1: {
-				// DisplayName: Pressure Sigil I
-				/* Tooltip:
+			DepthPearl: {
+				DisplayName: Жемчужина глубины
+				Tooltip:
 					'''
-					Withstands the water below the first seal
-					Every seal past that will still crush you
-					''' */
-			}
-
-			PressureSigil2: {
-				// DisplayName: Pressure Sigil II
-				// Tooltip: Withstands the water down to the second seal
-			}
-
-			PressureSigil3: {
-				// DisplayName: Pressure Sigil III
-				// Tooltip: Withstands the water down to the third seal
-			}
-
-			PressureSigil4: {
-				// DisplayName: Pressure Sigil IV
-				/* Tooltip:
+					Навсегда ослабляет давление глубины
+					Полностью глубина не отпускает никогда
+					Можно съесть до 4 штук
 					'''
-					Withstands the water below the last seal
-					Nothing in the tide can crush you now
-					''' */
 			}
 
 			CrabRoyalAltar: {
@@ -373,8 +377,8 @@ Mods: {
 			}
 
 			CrushingPressureDebuff: {
-				// DisplayName: Crushing Pressure
-				// Description: The depth is squeezing the life out of you — rise, or seal the pressure out
+				DisplayName: Давление глубины
+				Description: Глубина давит на тебя (давление {0}): воздух уходит быстрее, падают защита и скорость. Вне воды давит сильнее с каждой секундой
 			}
 
 			TideStunDebuff: {
@@ -395,6 +399,9 @@ Mods: {
 			// Tcampfire_tile.MapEntry: Tide Campfire
 			// Tidesand_tile.MapEntry: Tidesand
 			// Tidestone_tile.MapEntry: Tidestone
+			Sealstone_tile.MapEntry: Печатный камень
+			LighthouseLamp_tile.MapEntry: Лампа маяка
+			LighthouseChain_tile.MapEntry: Маячная цепь
 			// CrabRoyalAltar_tile.MapEntry: Royal Tide Altar
 			// ShadowCoral_tile.MapEntry: Shadow Coral
 			// GlowShell_tile.MapEntry: Glowing Shell
@@ -402,6 +409,7 @@ Mods: {
 			// TideCrate_tile.MapEntry: Crate
 			// TideSeal_tile.MapEntry: Tide Seal
 			// TideSealBarrier_tile.MapEntry: Sealed Passage
+			DepthPearlShrine_tile.MapEntry: Святилище жемчужины
 		}
 
 		Misc: {
@@ -418,7 +426,9 @@ Mods: {
 			// SealBroken2: The second seal cracks — the trench draws breath.
 			// SealBroken3: The third seal cracks — the pinch of the trench yields.
 			// SealBroken4: The last seal cracks — the Heart of the Abyss lies open.
+			SealCracked: Где-то в глубине по печати пошла трещина. Она ждёт, чтобы её открыли.
 			// PressureDeath: "{0} was crushed by the weight of the deep"
+			ShrineEmpty: Святилище тебе больше ничего не даст.
 		}
 
 		NPCs: {
@@ -469,6 +479,13 @@ Mods: {
 					Label: Тряска экрана
 					Tooltip: Тряска камеры от оружия, взрывов и боссов мода. Выключите, если от неё укачивает.
 				}
+
+				Headers.Experimental: Экспериментальное
+
+				ExperimentalWaterPhysics: {
+					Label: Экспериментальная физика воды
+					Tooltip: Инерция, плавучесть и течения в воде Прилива Теней: персонаж скользит, а не замирает, у поверхности его тянет вверх, прыжок с высоты уводит глубже, а в глубоких зонах сносит течением. Не доделано, может ощущаться странно.
+				}
 			}
 
 			SoADevConfig: {
@@ -481,7 +498,10 @@ Mods: {
 			}
 		}
 
-		// Keybinds.DevMenu.DisplayName: Dev menu
+		Keybinds: {
+			// DevMenu.DisplayName: Dev menu
+			StructureUndo.DisplayName: Жезл построек — отмена
+		}
 
 		StructureTool: {
 			Toolbar: {
@@ -519,6 +539,30 @@ Mods: {
 					RightClick: ПКМ – отмена
 				}
 
+				Place: {
+					Title: Разместить структуру
+					Description:
+						'''
+						Открывает библиотеку построек.
+						Выбранная идёт за курсором:
+						СКМ отражает, красным — тайлы,
+						которые она заменит.
+						'''
+					LeftClick: ЛКМ – библиотека / поставить
+					RightClick: ПКМ – выйти из размещения
+				}
+
+				Undo: {
+					Title: Отменить
+					Description:
+						'''
+						Откатывает последнее изменение
+						выделения или размещение.
+						Клавиша: {0}
+						'''
+					LeftClick: ЛКМ – отменить
+				}
+
 				Save: {
 					Title: Сохранить структуру
 					Description:
@@ -534,6 +578,15 @@ Mods: {
 				Title: Сохранить структуру
 				NameLabel: Название:
 				FiltersLabel: Игнорируемые тайлы:
+				ToSources: Сохранить в исходники мода
+				ToExport: Сохранится в папку экспорта
+				Overwrite: Перезаписать
+				StatsSize: Размер {0}x{1}, клеток {2}
+				StatsTiles: Блоков: {0} (видов: {1})
+				StatsWalls: Стен: {0}, клеток с жидкостью: {1}
+				WarnChests: Сундуки сохранятся без содержимого
+				WarnWires: Провода и актуаторы не сохраняются
+				WarnOverwrite: Файл с таким именем уже есть
 				Cancel: Отмена
 				Save: Сохранить
 			}
@@ -547,6 +600,50 @@ Mods: {
 				LightSources: Освещение
 			}
 
+			Library: {
+				Title: Библиотека построек
+				Empty:
+					'''
+					Пока пусто.
+					Выдели постройку жезлом
+					и сохрани её.
+					'''
+				OpenFolder: Открыть папку
+				Close: Закрыть
+				Place: Разместить
+				Stats: "{0}x{1}, клеток {2}, блоков {3}, стен {4}"
+				MissingTypes: Не найдено типов тайлов/стен: {0}, эти клетки останутся пустыми
+				LoadFailed: Файл не читается — подробности в логе мода
+
+				Source: {
+					Mod: мод
+					Sources: исходники
+					Export: экспорт
+				}
+			}
+
+			Preview: {
+				Hint: Колесо – масштаб, ЛКМ – двигать, ПКМ – вписать
+				Outside: не часть постройки
+				Empty: пусто
+				Wall: стена: {0}
+				Liquid: "{0} {1}%"
+				Water: вода
+				Lava: лава
+				Honey: мёд
+				Shimmer: мерцание
+			}
+
+			Hud: {
+				DragSize: "{0} x {1}"
+				Clamped: Предел размера {0}x{1}
+				PlaceTitle: "{0}  {1}x{2}"
+				Mirrored: "  (отражена)"
+				Conflicts: Заменит тайлов: {0}
+				SingleplayerOnly: Размещение — только в одиночной игре
+				PlaceHint: ЛКМ поставить · СКМ отразить · ПКМ выйти
+			}
+
 			Chat: {
 				NothingSelected: Ничего не выделено: зажми ЛКМ и проведи мышью.
 				SelectionCleared: Выделение сброшено.
@@ -554,6 +651,13 @@ Mods: {
 				OverLimit: Выделение {0}x{1} больше предела {2}x{3}. Подрежь режимом удаления.
 				EnterName: Сначала введи название.
 				Saved: Сохранено {0}x{1}, {2} тайлов: {3}
+				NothingToUndo: Отменять нечего.
+				UndoneSelection: Изменение выделения отменено.
+				UndonePlacement: Размещение отменено.
+				Placed: Поставлено: {0}. Теперь это выделение — можно править и пересохранить.
+				PlaceSingleplayerOnly: Ставить постройки можно только в одиночной игре.
+				SaveFailed: Не удалось сохранить: {0}
+				SavedToSources: Сохранено {0}x{1}, {2} тайлов в исходники мода (пересобери мод): {3}
 			}
 		}
 

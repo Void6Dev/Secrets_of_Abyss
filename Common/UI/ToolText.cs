@@ -15,5 +15,7 @@ namespace SoA.Common.UI
             => Language.GetTextValue(Prefix + key, args);
 
         public static string[] Lines(string key) => Get(key).Split('\n');
+
+        public static string[] Lines(string key, params object[] args) => Get(key, args).Split('\n');
     }
 }

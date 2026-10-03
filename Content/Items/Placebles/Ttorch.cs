@@ -64,12 +64,11 @@ namespace SoA.Content.Items.Placebles
             recipe.AddTile(TileID.WorkBenches);
             recipe.Register();
 
-            // Альтернатива из люминофора медузы-тени: в самом биоме ванильный коралл не растёт
-            Recipe lumenRecipe = CreateRecipe(6);
-            lumenRecipe.AddIngredient(ItemID.Torch, 6);
-            lumenRecipe.AddIngredient<Materials.DarkLumen>(1);
-            lumenRecipe.AddTile(TileID.WorkBenches);
-            lumenRecipe.Register();
+            Recipe altRecipe = CreateRecipe(9);
+            altRecipe.AddIngredient(ItemID.Wood, 3);
+            altRecipe.AddIngredient<Materials.DarkLumen>(1);
+            altRecipe.AddTile(TileID.WorkBenches);
+            altRecipe.Register();
         }
     }
 }

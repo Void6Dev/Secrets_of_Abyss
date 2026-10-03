@@ -10,8 +10,6 @@ namespace SoA.Content.Items.Fishing
     {
         private const int WellFedTicks = 12 * 60 * 60;
 
-        public override string Texture => "Terraria/Images/Item_" + ItemID.Ebonkoi;
-
         public override void SetStaticDefaults()
         {
             ItemID.Sets.IsFood[Type] = true;

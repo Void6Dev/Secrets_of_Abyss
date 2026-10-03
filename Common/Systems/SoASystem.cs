@@ -24,6 +24,11 @@ namespace SoA.Common.Systems
                 "RingPass"
             );
 
+            GameShaders.Misc["SoA:LighthouseBeam"] = new MiscShaderData(
+                Mod.Assets.Request<Effect>("Assets/Effects/LighthouseBeam", AssetRequestMode.ImmediateLoad),
+                "BeamPass"
+            );
+
             GameShaders.Misc["SoA:ShardedBeam"] = new MiscShaderData(
                 Mod.Assets.Request<Effect>("Assets/Effects/ShardedBeam", AssetRequestMode.ImmediateLoad),
                 "BeamPass"

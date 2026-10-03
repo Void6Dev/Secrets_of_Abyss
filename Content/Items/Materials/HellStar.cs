@@ -5,18 +5,17 @@ using Terraria.ID;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria.DataStructures;
-using SoA.Common.CustomClasses;
+using SoA.Common.Utils;
 
 namespace SoA.Content.Items.Materials
 {
     public class HellStar : ModItem
     {
-        private readonly SimpleItemAnimation _anim = new(5, 15);
         private int _evaporateTimer;
 
         public override void SetStaticDefaults()
         {
-            Main.RegisterItemAnimation(Item.type, new DrawAnimationVertical(15, 5));
+            ItemAnimations.Register(Type, frameCount: 5, ticksPerFrame: 15);
             ItemID.Sets.ItemIconPulse[Item.type] = false;
         }
 
@@ -32,8 +31,6 @@ namespace SoA.Content.Items.Materials
 
         public override void PostUpdate()
         {
-            _anim.Update();
-
             Lighting.AddLight(Item.Center, 1.2f, 0.4f, 0.0f);
 
             bool onSurface = Item.Center.Y / 16f < Main.worldSurface;
@@ -89,8 +86,8 @@ namespace SoA.Content.Items.Materials
             ref float rotation, ref float scale, int whoAmI)
         {
             Texture2D tex    = ModContent.Request<Texture2D>(Texture).Value;
-            Rectangle frame  = _anim.GetFrame(tex); 
-            Vector2 origin   = _anim.GetOrigin(tex);
+            Rectangle frame  = ItemAnimations.Frame(Type, tex);
+            Vector2 origin   = ItemAnimations.Origin(Type, tex);
             Vector2 pos      = Item.Center - Main.screenPosition;
 
             // Аддитивное свечение

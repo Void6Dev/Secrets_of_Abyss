@@ -67,6 +67,28 @@ namespace SoA.Common.UI
             Frame(spriteBatch, area, border);
         }
 
+        // Кнопка окна: по наведению заливка темнеет до цвета рамки, выключенная — тусклая
+        public static void Button(SpriteBatch spriteBatch, Rectangle area, string label, Color fill, Color border,
+            bool hovered, bool enabled = true)
+        {
+            Color shownFill = !enabled ? ButtonFill * 0.6f : hovered ? border * 0.6f : fill;
+            Panel(spriteBatch, area, shownFill, enabled ? border : PanelBorder * 0.6f);
+            TextCentered(spriteBatch, label, area, enabled ? Color.White : DimText, 0.95f);
+        }
+
+        public const int CheckboxSize = 18;
+
+        // Строка-галочка: квадрат слева, подпись справа, вся строка кликабельна
+        public static void Checkbox(SpriteBatch spriteBatch, Rectangle row, string label, bool isChecked, bool hovered)
+        {
+            var box = new Rectangle(row.X, row.Y + (row.Height - CheckboxSize) / 2, CheckboxSize, CheckboxSize);
+            Panel(spriteBatch, box, new Color(16, 18, 36, 235), hovered ? ActiveBorder : PanelBorder);
+            if (isChecked)
+                CheckMark(spriteBatch, box, Color.White);
+
+            Text(spriteBatch, label, new Vector2(box.Right + 8, row.Y + 1), hovered ? Color.White : BodyText, 0.85f);
+        }
+
         // Пунктирная рамка — иконка режима выделения
         public static void DashedFrame(SpriteBatch spriteBatch, Rectangle area, Color color,
             int dash = 4, int gap = 3, int thickness = 2)
@@ -176,6 +198,41 @@ namespace SoA.Common.UI
             var end = new Vector2(area.Right, area.Y);
             Line(spriteBatch, tip, end, 2.5f, color);
             Line(spriteBatch, tip, tip + new Vector2(area.Width * 0.28f, -area.Height * 0.1f), 2f, color);
+        }
+
+        // Стрелка-разворот «отменить»: дуга из отрезков и наконечник у левого конца
+        public static void UndoArrow(SpriteBatch spriteBatch, Rectangle area, Color color)
+        {
+            const int Segments = 8;
+            var center = new Vector2(area.Center.X + area.Width * 0.08f, area.Center.Y + area.Height * 0.1f);
+            float radius = area.Width * 0.34f;
+
+            Vector2 previous = center + new Vector2(-radius, 0f);
+            for (int i = 1; i <= Segments; i++)
+            {
+                float angle = MathF.PI + MathF.PI * 1.25f * i / Segments;
+                Vector2 point = center + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius;
+                Line(spriteBatch, previous, point, 2.5f, color);
+                previous = point;
+            }
+
+            Vector2 tip = center + new Vector2(-radius, 0f);
+            float head = area.Width * 0.22f;
+            Line(spriteBatch, tip, tip + new Vector2(-head * 0.7f, -head * 0.8f), 2.5f, color);
+            Line(spriteBatch, tip, tip + new Vector2(head * 0.8f, -head * 0.5f), 2.5f, color);
+        }
+
+        // Штамп «разместить»: постройка-коробка и стрелка вниз над ней
+        public static void Stamp(SpriteBatch spriteBatch, Rectangle area, Color color)
+        {
+            var house = new Rectangle(area.X + 2, area.Y + area.Height / 2, area.Width - 4, area.Height / 2);
+            DashedFrame(spriteBatch, house, color);
+
+            var top = new Vector2(area.Center.X, area.Y);
+            var bottom = new Vector2(area.Center.X, area.Y + area.Height * 0.62f);
+            Line(spriteBatch, top, bottom, 3f, color);
+            Line(spriteBatch, bottom, bottom + new Vector2(-5f, -5f), 2.5f, color);
+            Line(spriteBatch, bottom, bottom + new Vector2(5f, -5f), 2.5f, color);
         }
 
         // Жезл на кнопке сохранения: палочка с ромбовидным навершием

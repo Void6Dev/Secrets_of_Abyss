@@ -1,6 +1,25 @@
 Mods: {
 	SoA: {
 		Items: {
+			LighthouseLamp: {
+				DisplayName: Lighthouse Lamp
+				Tooltip:
+					'''
+					Casts a beam of light that stops at the first solid rock
+					Hang a Lighthouse Chain beneath it to turn the beam
+					Right click to light or put out
+					'''
+			}
+
+			LighthouseChain: {
+				DisplayName: Lighthouse Chain
+				Tooltip:
+					'''
+					Hang it beneath a Lighthouse Lamp
+					Hold right click on the chain to turn the beam toward the cursor
+					'''
+			}
+
 			Ichthyofang: {
 				DisplayName: Ichthyofang
 				Tooltip:
@@ -198,8 +217,11 @@ Mods: {
 				SetBonus:
 					'''
 					Increases whip range by 30%
-					Press 2 times DOWN to turn off set bonus visual effect
+					Wraps you in a snow aura
+					Double tap {0} to toggle the aura
 					'''
+				AuraOn: Snow aura on
+				AuraOff: Snow aura off
 				DisplayName: Flinx Hood
 				Tooltip: Increases summon damage by 5%
 			}
@@ -283,31 +305,13 @@ Mods: {
 					'''
 			}
 
-			PressureSigil1: {
-				DisplayName: Pressure Sigil I
+			DepthPearl: {
+				DisplayName: Depth Pearl
 				Tooltip:
 					'''
-					Withstands the water below the first seal
-					Every seal past that will still crush you
-					'''
-			}
-
-			PressureSigil2: {
-				DisplayName: Pressure Sigil II
-				Tooltip: Withstands the water down to the second seal
-			}
-
-			PressureSigil3: {
-				DisplayName: Pressure Sigil III
-				Tooltip: Withstands the water down to the third seal
-			}
-
-			PressureSigil4: {
-				DisplayName: Pressure Sigil IV
-				Tooltip:
-					'''
-					Withstands the water below the last seal
-					Nothing in the tide can crush you now
+					Permanently eases the pressure of the deep
+					The deep never lets go completely
+					Up to 4 can be consumed
 					'''
 			}
 
@@ -374,7 +378,7 @@ Mods: {
 
 			CrushingPressureDebuff: {
 				DisplayName: Crushing Pressure
-				Description: The depth is squeezing the life out of you — rise, or seal the pressure out
+				Description: The deep presses on you (pressure {0}): air runs out faster, defense and speed suffer. Out of the water it crushes harder every second
 			}
 
 			TideStunDebuff: {
@@ -395,6 +399,9 @@ Mods: {
 			Tcampfire_tile.MapEntry: Tide Campfire
 			Tidesand_tile.MapEntry: Tidesand
 			Tidestone_tile.MapEntry: Tidestone
+			Sealstone_tile.MapEntry: Sealstone
+			LighthouseLamp_tile.MapEntry: Lighthouse Lamp
+			LighthouseChain_tile.MapEntry: Lighthouse Chain
 			CrabRoyalAltar_tile.MapEntry: Royal Tide Altar
 			ShadowCoral_tile.MapEntry: Shadow Coral
 			GlowShell_tile.MapEntry: Glowing Shell
@@ -402,6 +409,7 @@ Mods: {
 			TideCrate_tile.MapEntry: Crate
 			TideSeal_tile.MapEntry: Tide Seal
 			TideSealBarrier_tile.MapEntry: Sealed Passage
+			DepthPearlShrine_tile.MapEntry: Pearl Shrine
 		}
 
 		Misc: {
@@ -418,7 +426,9 @@ Mods: {
 			SealBroken2: The second seal cracks — the trench draws breath.
 			SealBroken3: The third seal cracks — the pinch of the trench yields.
 			SealBroken4: The last seal cracks — the Heart of the Abyss lies open.
+			SealCracked: Somewhere in the deep, a crack runs across a seal. It waits for a hand to open it.
 			PressureDeath: "{0} was crushed by the weight of the deep"
+			ShrineEmpty: The shrine has nothing more for you.
 		}
 
 		NPCs: {
@@ -469,6 +479,13 @@ Mods: {
 					Label: Screen shake
 					Tooltip: Camera shake from mod weapons, explosions and bosses. Turn off if it makes you dizzy.
 				}
+
+				Headers.Experimental: Experimental
+
+				ExperimentalWaterPhysics: {
+					Label: Experimental water physics
+					Tooltip: Inertia, buoyancy and currents in the Tide of Shadows water: you glide instead of stopping dead, drift up near the surface, high dives carry you deeper, and the deep zones push you around. Unfinished, may feel off.
+				}
 			}
 
 			SoADevConfig: {
@@ -481,7 +498,10 @@ Mods: {
 			}
 		}
 
-		Keybinds.DevMenu.DisplayName: Dev menu
+		Keybinds: {
+			DevMenu.DisplayName: Dev menu
+			StructureUndo.DisplayName: Structure wand undo
+		}
 
 		StructureTool: {
 			Toolbar: {
@@ -518,6 +538,30 @@ Mods: {
 					RightClick: RMB – clear
 				}
 
+				Place: {
+					Title: Place structure
+					Description:
+						'''
+						Opens the structure library.
+						The chosen one follows the cursor:
+						MMB mirrors it, red cells are
+						tiles it will replace.
+						'''
+					LeftClick: LMB – open library / place
+					RightClick: RMB – leave placing
+				}
+
+				Undo: {
+					Title: Undo
+					Description:
+						'''
+						Reverts the last selection change
+						or structure placement.
+						Hotkey: {0}
+						'''
+					LeftClick: LMB – undo
+				}
+
 				Save: {
 					Title: Save structure
 					Description:
@@ -533,6 +577,15 @@ Mods: {
 				Title: Save structure
 				NameLabel: Name:
 				FiltersLabel: Ignored tiles:
+				ToSources: Save into mod sources
+				ToExport: Saved to the export folder
+				Overwrite: Overwrite
+				StatsSize: Size {0}x{1}, {2} cells
+				StatsTiles: Blocks: {0} ({1} kinds)
+				StatsWalls: Walls: {0}, liquid cells: {1}
+				WarnChests: Chests are saved without contents
+				WarnWires: Wires and actuators are not saved
+				WarnOverwrite: A file with this name exists
 				Cancel: Cancel
 				Save: Save
 			}
@@ -546,6 +599,50 @@ Mods: {
 				LightSources: Light sources
 			}
 
+			Library: {
+				Title: Structure library
+				Empty:
+					'''
+					No structures yet.
+					Select a build with the wand
+					and save it.
+					'''
+				OpenFolder: Open folder
+				Close: Close
+				Place: Place
+				Stats: "{0}x{1}, {2} cells, {3} blocks, {4} walls"
+				MissingTypes: "{0} tile/wall types are missing: those cells stay empty"
+				LoadFailed: Could not read the file — see the mod log
+
+				Source: {
+					Mod: mod
+					Sources: sources
+					Export: export
+				}
+			}
+
+			Preview: {
+				Hint: Wheel – zoom, LMB – drag, RMB – fit
+				Outside: not part of the structure
+				Empty: empty
+				Wall: wall: {0}
+				Liquid: "{0} {1}%"
+				Water: water
+				Lava: lava
+				Honey: honey
+				Shimmer: shimmer
+			}
+
+			Hud: {
+				DragSize: "{0} x {1}"
+				Clamped: Size limit {0}x{1}
+				PlaceTitle: "{0}  {1}x{2}"
+				Mirrored: "  (mirrored)"
+				Conflicts: Replaces {0} tiles
+				SingleplayerOnly: Placing works in singleplayer only
+				PlaceHint: LMB place · MMB mirror · RMB leave
+			}
+
 			Chat: {
 				NothingSelected: Nothing selected: hold left click and drag first.
 				SelectionCleared: Selection cleared.
@@ -553,6 +650,13 @@ Mods: {
 				OverLimit: Selection {0}x{1} is over the {2}x{3} limit. Trim it with erase mode.
 				EnterName: Enter a name first.
 				Saved: Saved {0}x{1}, {2} tiles: {3}
+				NothingToUndo: Nothing to undo.
+				UndoneSelection: Selection change undone.
+				UndonePlacement: Placement undone.
+				Placed: Placed {0}. It is now the selection — edit and save again.
+				PlaceSingleplayerOnly: Structures can only be placed in singleplayer.
+				SaveFailed: Save failed: {0}
+				SavedToSources: Saved {0}x{1}, {2} tiles into mod sources (rebuild the mod): {3}
 			}
 		}
 

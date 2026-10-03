@@ -43,6 +43,10 @@ namespace SoA.Common.Utils
         public static StructureFilter Filters { get; private set; } = StructureFilter.None;
         public static bool Dragging { get; private set; }
 
+        // Имя постройки, из которой получено выделение (после размещения из библиотеки) —
+        // окно сохранения предлагает его, чтобы правка ложилась в тот же файл
+        public static string SourceName { get; private set; }
+
         public static int Count => _cells.Count;
         public static IReadOnlySet<Point> Cells => _cells;
 
@@ -78,7 +82,40 @@ namespace SoA.Common.Utils
 
         public static void Clear()
         {
+            if (_cells.Count > 0)
+                StructureHistory.RecordSelection();
+            Reset();
+        }
+
+        // Сброс без записи в историю — при выходе из мира
+        public static void Reset()
+        {
             _cells.Clear();
+            Dragging = false;
+            SourceName = null;
+            Touch();
+        }
+
+        public static void SetSourceName(string name) => SourceName = name;
+
+        public static HashSet<Point> SnapshotCells() => new(_cells);
+
+        // Откат из истории: маска и имя возвращаются вместе
+        public static void RestoreCells(HashSet<Point> cells, string sourceName)
+        {
+            _cells.Clear();
+            _cells.UnionWith(cells);
+            SourceName = sourceName;
+            Dragging = false;
+            Touch();
+        }
+
+        // Выделение = клетки поставленной постройки. История пишется размещением целиком
+        public static void ReplaceWithoutHistory(IEnumerable<Point> cells, string sourceName)
+        {
+            _cells.Clear();
+            _cells.UnionWith(cells);
+            SourceName = sourceName;
             Dragging = false;
             Touch();
         }
@@ -112,9 +149,13 @@ namespace SoA.Common.Utils
 
             Dragging = false;
             Rectangle area = RectFromDrag(_dragAnchor, _dragCursor, out _);
+            StructureHistory.RecordSelection();
 
             if (Mode == SelectionMode.Replace)
+            {
                 _cells.Clear();
+                SourceName = null;   // новое выделение с нуля — это уже другая постройка
+            }
 
             if (Mode == SelectionMode.Erase)
                 RemoveArea(area);
@@ -169,11 +210,12 @@ namespace SoA.Common.Utils
                 }
             }
 
-            foreach (Point p in extra)
-                _cells.Add(p);
+            if (extra.Count == 0)
+                return 0;
 
-            if (extra.Count > 0)
-                Touch();
+            StructureHistory.RecordSelection();
+            _cells.UnionWith(extra);
+            Touch();
             return extra.Count;
         }
 

@@ -13,22 +13,40 @@ namespace SoA.Content.Items.DevTools
     // Живое превью выделения в мире: заливка по клеткам маски, контур только по
     // внешним границам и прямоугольник текущего мазка. Геометрия контура кэшируется
     // и пересобирается только при изменении маски (StructureSelection.Version).
+    // В режиме размещения поверх рисуется призрак постройки и красные клетки,
+    // где она заменит чужие тайлы.
     public class StructureWandRenderer : ModSystem
     {
         private const int TileSize = 16;
         private const int BorderThickness = 2;
         private const int CullMargin = 400;
 
+        private const float GhostOpacity = 0.6f;
+        private const float ConflictOpacity = 0.35f;
+
         private static readonly Color MaskColor = new(80, 220, 120);
-        private static readonly Color LimitColor = new(255, 60, 60);
         private static readonly Color BoundsColor = new(200, 220, 255);
+
+        private static StructureRender _ghost;
 
         private readonly List<Rectangle> _fillRuns = new();   // в тайлах, высота 1
         private readonly List<Rectangle> _edges = new();       // в пикселях мира
         private int _geometryVersion = -1;
 
+        public override void Load()
+        {
+            if (!Main.dedServ)
+                _ghost = new StructureRender();
+        }
+
+        public override void Unload() => _ghost = null;
+
         // Маску чистит StructureToolUi — здесь только свой кэш геометрии
-        public override void OnWorldUnload() => _geometryVersion = -1;
+        public override void OnWorldUnload()
+        {
+            _geometryVersion = -1;
+            _ghost?.Release();
+        }
 
         public override void PostUpdateEverything()
         {
@@ -38,13 +56,17 @@ namespace SoA.Content.Items.DevTools
             // Убрали жезл из руки посреди протяжки — мазок не должен «залипнуть»
             if (Main.LocalPlayer?.HeldItem?.ModItem is not StructureWand && StructureSelection.Dragging)
                 StructureSelection.CancelDrag();
+
+            // Призрак держит текстуру только пока идёт размещение
+            if (_ghost != null && !StructurePlacement.Active && _ghost.Data != null)
+                _ghost.Release();
         }
 
         public override void PostDrawTiles()
         {
             if (Main.LocalPlayer?.HeldItem?.ModItem is not StructureWand)
                 return;
-            if (StructureSelection.Count == 0 && !StructureSelection.Dragging)
+            if (StructureSelection.Count == 0 && !StructureSelection.Dragging && !StructurePlacement.Active)
                 return;
 
             if (_geometryVersion != StructureSelection.Version)
@@ -55,7 +77,7 @@ namespace SoA.Content.Items.DevTools
             sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp,
                 null, null, null, Main.GameViewMatrix.TransformationMatrix);
 
-            Color maskColor = StructureSelection.OverLimit ? LimitColor : MaskColor;
+            Color maskColor = StructureSelection.OverLimit ? StructureToolbar.LimitColor : MaskColor;
 
             foreach (Rectangle run in _fillRuns)
             {
@@ -74,8 +96,39 @@ namespace SoA.Content.Items.DevTools
 
             DrawBoundsOutline(sb, pixel);
             DrawDragPreview(sb, pixel);
+            DrawPlacementGhost(sb, pixel);
 
             sb.End();
+        }
+
+        // Призрак рисуется готовой картинкой постройки; зеркало — простым флипом
+        // текстуры, этого для прицеливания достаточно
+        private static void DrawPlacementGhost(SpriteBatch sb, Texture2D pixel)
+        {
+            if (!StructurePlacement.Active || _ghost == null)
+                return;
+
+            _ghost.Show(StructurePlacement.Data);
+            Rectangle area = StructurePlacement.Area;
+            var worldArea = new Rectangle(area.X * TileSize, area.Y * TileSize, area.Width * TileSize, area.Height * TileSize);
+            Rectangle screenArea = Offset(worldArea);
+
+            if (_ghost.Texture != null)
+            {
+                SpriteEffects flip = StructurePlacement.Mirror ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+                sb.Draw(_ghost.Texture, screenArea.Location.ToVector2(), null, Color.White * GhostOpacity, 0f,
+                    Vector2.Zero, 1f / _ghost.Scale, flip, 0f);
+            }
+
+            Color conflictColor = StructureToolbar.LimitColor * ConflictOpacity;
+            foreach (Rectangle run in StructurePlacement.ConflictRuns)
+            {
+                var runArea = new Rectangle(run.X * TileSize, run.Y * TileSize, run.Width * TileSize, TileSize);
+                if (OnScreen(runArea))
+                    sb.Draw(pixel, Offset(runArea), conflictColor);
+            }
+
+            DrawOutline(sb, pixel, worldArea, StructureToolbar.PlaceColor, BorderThickness);
         }
 
         // Габариты будущего файла — тонкая рамка, чтобы видеть реальный размер постройки
@@ -85,7 +138,7 @@ namespace SoA.Content.Items.DevTools
             if (bounds.Width <= 0)
                 return;
 
-            Color color = (StructureSelection.OverLimit ? LimitColor : BoundsColor) * 0.5f;
+            Color color = (StructureSelection.OverLimit ? StructureToolbar.LimitColor : BoundsColor) * 0.5f;
             var area = new Rectangle(bounds.X * TileSize, bounds.Y * TileSize,
                 bounds.Width * TileSize, bounds.Height * TileSize);
             DrawOutline(sb, pixel, area, color, 1);
@@ -97,7 +150,7 @@ namespace SoA.Content.Items.DevTools
                 return;
 
             Rectangle drag = StructureSelection.DragArea(out bool clamped);
-            Color color = clamped ? LimitColor : ModeColor(StructureSelection.Mode);
+            Color color = clamped ? StructureToolbar.LimitColor : StructureToolbar.ModeColor(StructureSelection.Mode);
             var area = new Rectangle(drag.X * TileSize, drag.Y * TileSize,
                 drag.Width * TileSize, drag.Height * TileSize);
 
@@ -113,13 +166,6 @@ namespace SoA.Content.Items.DevTools
             sb.Draw(pixel, new Rectangle(r.X, r.Y, thickness, r.Height), color);
             sb.Draw(pixel, new Rectangle(r.Right - thickness, r.Y, thickness, r.Height), color);
         }
-
-        internal static Color ModeColor(SelectionMode mode) => mode switch
-        {
-            SelectionMode.Add => new Color(80, 220, 120),
-            SelectionMode.Erase => new Color(255, 90, 90),
-            _ => new Color(90, 180, 255)
-        };
 
         private static Rectangle Offset(Rectangle worldPixels)
             => new(worldPixels.X - (int)Main.screenPosition.X, worldPixels.Y - (int)Main.screenPosition.Y,

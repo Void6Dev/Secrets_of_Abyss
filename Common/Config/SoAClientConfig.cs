@@ -14,5 +14,11 @@ namespace SoA.Common.Config
         // Все толчки камеры мода идут через ScreenShake.Punch и смотрят на этот флаг
         [DefaultValue(true)]
         public bool ScreenShake { get; set; }
+
+        // Инерция, плавучесть и течения в воде Прилива (TideWaterFeelPlayer, TideCurrents).
+        // Меняет только движение своего персонажа: позицию игра и так шлёт от владельца
+        [Header("Experimental")]
+        [DefaultValue(false)]
+        public bool ExperimentalWaterPhysics { get; set; }
     }
 }

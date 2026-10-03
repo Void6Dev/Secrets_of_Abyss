@@ -38,16 +38,6 @@ namespace SoA.Content.Items.Fishing
             Item.value = Item.sellPrice(gold: 3);
         }
 
-        public override void AddRecipes()
-        {
-            CreateRecipe()
-                .AddIngredient(ModContent.ItemType<SunkenTackle>(), 5)
-                .AddIngredient(ModContent.ItemType<RoyalClaw>(), 2)
-                .AddIngredient(ModContent.ItemType<DarkLumen>(), 8)
-                .AddTile(TileID.Anvils)
-                .Register();
-        }
-
         public override void ModifyFishingLine(Projectile bobber, ref Vector2 lineOriginOffset, ref Color lineColor)
             => lineColor = LineColor;
     }

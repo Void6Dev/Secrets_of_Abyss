@@ -31,7 +31,8 @@ namespace SoA.Content.Items.Placebles
         public override void AddRecipes()
         {
             CreateRecipe()
-                .AddIngredient(ModContent.ItemType<Tidesand>(), 25)
+                .AddRecipeGroup(SoARecipeGroups.GoldBar, 10)
+                .AddIngredient(ModContent.ItemType<Tidestone>(), 25)
                 .AddIngredient(ModContent.ItemType<Ichthyofang>(), 5)
                 .AddTile(TileID.Anvils)
                 .Register();

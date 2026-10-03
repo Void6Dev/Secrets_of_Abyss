@@ -17,7 +17,7 @@ namespace SoA.Content.Items.Accessories
             Item.width = 28;
             Item.height = 28;
             Item.accessory = true;
-            Item.value = Item.sellPrice(silver: 90);
+            Item.value = Item.sellPrice(silver: 80);
             Item.rare = ItemRarityID.Blue;
         }
 
@@ -31,9 +31,10 @@ namespace SoA.Content.Items.Accessories
         public override void AddRecipes()
         {
             Recipe recipe = CreateRecipe();
-            recipe.AddIngredient(ItemID.Seashell, 1);
-            recipe.AddIngredient(ModContent.ItemType<Tidesand>(), 30);
-            recipe.AddTile(TileID.WaterFountain);
+            recipe.AddIngredient(ItemID.Sapphire, 8);
+            recipe.AddIngredient(ItemID.Seashell, 10);
+            recipe.AddIngredient(ItemID.Coral, 3);
+            recipe.AddTile(TileID.Anvils);
             recipe.Register();
         }
     }

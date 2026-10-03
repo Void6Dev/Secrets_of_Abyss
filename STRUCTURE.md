@@ -33,8 +33,9 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 |---|---|
 | `Items/Weapons` | оружие; парами код+спрайт |
 | `Items/Accessories/<Аксессуар>/` | аксессуар + его ModPlayer + слои отрисовки |
+| `Items/Consumables/` | постоянные улучшения как плод жизни (`DepthPearl` — ослабляет давление, счётчик в `TidePressurePlayer`) |
 | `Items/Ammo`, `Items/Materials`, `Items/Placebles`, `Items/Fishing`, `Items/BossSummons`, `Items/Critters`, `Items/Armor` | предметы по назначению |
-| `Items/DevTools` | палочка структур, её рендерер и `icons/` |
+| `Items/DevTools` | палочка структур, её рендерер (выделение и призрак размещения) и `icons/` |
 | `Items/oldtextures` | старый арт, в игре не используется |
 | `Projectiles/<Владелец>/` | снаряды, сгруппированные по оружию/боссу, которому принадлежат |
 | `NPCs/Bosses/KingCrab` | босс: `King_crab.*.cs` — части одного класса (Claws, Crown, Legs, Vfx, Rig) |
@@ -52,10 +53,10 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 | `Players` | ModPlayer'ы; `RoyalSpear/` — состояние копья и полоска приливного удара |
 | `Systems` | `SoASystem` (регистрация шейдеров), `DownedBossSystem` |
 | `Systems/Worldgen` | генерация: проходы, `TideOcean/` — океан Прилива Теней |
-| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `ScreenShake` (вся тряска экрана — только через него, её выключает конфиг), `SpriteSpine` (кадр спрайта, натянутый на гнущийся позвоночник — угорь), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/`, `Atmosphere/` — атмосфера Прилива Теней (экранный фильтр воды, фоновые частицы) |
-| `UI/DevMenu`, `UI/StructureTool` | самодельный интерфейс инструментов разработки |
+| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `ScreenShake` (вся тряска экрана — только через него, её выключает конфиг), `SpriteSpine` (кадр спрайта, натянутый на гнущийся позвоночник — угорь), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/`, `Atmosphere/` — атмосфера Прилива Теней (экранный фильтр воды, фоновые частицы и биолюминесцентный след, сцена снятия печати `TideSealCinematic`, поверхность воды `TideWaterFx` — всплески, капли, рябь) |
+| `UI/DevMenu`, `UI/StructureTool` | самодельный интерфейс инструментов разработки; у построек — тулбар, окна сохранения и библиотеки, интерактивное превью (`StructureViewport`) и рендер в RenderTarget |
 | `UI` (плоско) | `SoAHudDraw`, `ToolText` — общие примитивы рисования интерфейса |
-| `Utils` | `SoACombat` (проверка «промок»), `SoAEasing` (кривые плавности), структуры, шум, фильтры |
+| `Utils` | `SoACombat` (проверка «промок»), `SoAEasing` (кривые плавности), структуры (`StructureData`/`StructureIO`, библиотека, выделение, размещение, история отмены), шум, фильтры |
 | `Weapons` | общие основы оружия: `ClubItem` + `ClubProjectile` — тяжёлое оружие «замах → зарядка по ступеням → взмах» (Зубодробилка, Коса огненной бури); `HeldProjectiles` — удержание снаряда в руке и зеркалирование рук |
 | `Config` | `SoAClientConfig` — настройки игрока (тряска экрана), `SoADevConfig` — для разработки |
 | `CustomClasses`, `Backgrounds` | по одному файлу на назначение |

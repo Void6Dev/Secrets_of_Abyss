@@ -7,7 +7,8 @@ namespace SoA.Content.Tiles.Other
 {
     // Мембрана печати: ею затыкается проход между зонами, пока ступень не пройдена.
     // Не ломается ничем — ни киркой, ни взрывчаткой, ни жидкостью: единственный способ
-    // её убрать — выполнить условие ступени, тогда TideSealSystem снимет её сам.
+    // её убрать — выполнить условие ступени и активировать печать (ПКМ по мембране
+    // или замку), тогда TideSealSystem снимет её сам.
     //
     // Свет пропускает намеренно: глухая пробка в шахте читалась бы как тупик,
     // а игрок должен видеть, что ход есть, просто заперт.
@@ -43,5 +44,7 @@ namespace SoA.Content.Tiles.Other
         public override bool CanExplode(int i, int j) => false;
 
         public override bool Slope(int i, int j) => false;
+
+        public override bool RightClick(int i, int j) => TideSeal_tile.Interact(i, j);
     }
 }

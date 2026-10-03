@@ -211,6 +211,7 @@ namespace SoA.Common.Systems.TideOcean
             BlendInlandSand();
             BlendInlandRock();
             RoundOffNeighbourCaves();
+            HardenInlandShell();
             PlaceBreakwaterRuin();
             DecorateSeabed();
             PlantKelpForests();
@@ -746,6 +747,8 @@ namespace SoA.Common.Systems.TideOcean
             }
 
             TideOfShadowsWorldData.SealSites = _sealSites;
+            TideOfShadowsWorldData.InlandEdgeTopY = _topY;
+            TideOfShadowsWorldData.InlandEdge = (int[])_inlandEdge.Clone();
         }
 
         // Уровень зеркала воды: минимальный по нескольким колонкам ванильного океана

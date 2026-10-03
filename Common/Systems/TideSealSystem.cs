@@ -1,28 +1,45 @@
 using System.IO;
+using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
+using SoA.Common.Graphics.Atmosphere;
 using SoA.Content.Tiles.Other;
 using SoA.Content.Worldgen;
 
 namespace SoA.Common.Systems
 {
-    // Печати прилива: каждая ступень держит проход в следующую зону, пока не убит
-    // её босс. Мембрану ставит генератор, снимает эта система — и только она,
-    // поэтому вся работа с миром здесь идёт под проверкой netMode: клиент тайлы
-    // не трогает, ему прилетает готовый квадрат от сервера.
+    // Печати прилива: каждая ступень держит проход в следующую зону. Когда босс ступени
+    // убит, на замке проступает трещина — печать готова, но сама не снимается: игрок
+    // активирует её ПКМ, сервер запускает ритуал (сцену у всех клиентов ведёт
+    // TideSealCinematic) и по его окончании убирает мембрану.
+    //
+    // Мембрану ставит генератор, снимает эта система — и только она, поэтому вся работа
+    // с миром идёт под проверкой netMode: клиент тайлы не трогает, ему прилетает
+    // готовый квадрат от сервера
     public class TideSealSystem : ModSystem
     {
         private const int CheckIntervalTicks = 60;   // условия меняются раз в бой, чаще проверять незачем
         private const int MaxSteps = 4;
+        private const float ActivationRangePx = 30f * 16f;
 
-        // Битовая маска снятых печатей: ступень N — бит (N-1)
+        // Длина ритуала от активации до снятия мембраны. Сцена клиента живёт по тем же тикам
+        public const int RitualTicks = 180;
+
+        // Битовые маски: ступень N — бит (N-1)
         private static int _openedMask;
+        private static int _crackAnnouncedMask;   // о трещине уже сказали в чат, только сервер
+        private static int _shrineMask;           // под снятой печатью стоит святилище жемчужины
         private static int _tickCounter;
+        private static int _ritualStep;
+        private static int _ritualTimer;
 
         public static bool IsOpened(int step) => (_openedMask & (1 << (step - 1))) != 0;
+
+        // Босс ступени убит, но печать ещё не снята — на замке трещина, его можно активировать
+        public static bool IsReady(int step) => IsStepCleared(step) && !IsOpened(step);
 
         // Условие ступени. Порядок жёсткий: краб -> Стена Плоти -> Плантера -> Мунлорд
         public static bool IsStepCleared(int step) => step switch
@@ -46,15 +63,57 @@ namespace SoA.Common.Systems
             return 0;
         }
 
+        // Старшая ступень среди печатей, оставшихся выше тайла. 0 — над ним ни одной.
+        // Низ печати, а не верх: стоя в самом проёме, игрок ещё не спустился
+        public static int SealsAbove(int tileY)
+        {
+            int step = 0;
+            foreach (TideSealSite site in TideOfShadowsWorldData.SealSites)
+            {
+                if (tileY > site.Y + site.Height && site.Step > step)
+                    step = site.Step;
+            }
+            return step;
+        }
+
+        public static bool TryGetSite(int step, out TideSealSite site)
+        {
+            foreach (TideSealSite candidate in TideOfShadowsWorldData.SealSites)
+            {
+                if (candidate.Step == step)
+                {
+                    site = candidate;
+                    return true;
+                }
+            }
+            site = default;
+            return false;
+        }
+
         public override void ClearWorld()
         {
             _openedMask = 0;
+            _crackAnnouncedMask = 0;
+            _shrineMask = 0;
             _tickCounter = 0;
+            _ritualStep = 0;
+            _ritualTimer = 0;
         }
 
-        public override void SaveWorldData(TagCompound tag) => tag["tideSealsOpened"] = _openedMask;
+        public override void SaveWorldData(TagCompound tag)
+        {
+            tag["tideSealsOpened"] = _openedMask;
+            tag["tideSealsCracked"] = _crackAnnouncedMask;
+            tag["tidePearlShrines"] = _shrineMask;
+        }
 
-        public override void LoadWorldData(TagCompound tag) => _openedMask = tag.GetInt("tideSealsOpened");
+        public override void LoadWorldData(TagCompound tag)
+        {
+            _openedMask = tag.GetInt("tideSealsOpened");
+            // Миры до ручной активации: о снятых печатях объявлять уже нечего
+            _crackAnnouncedMask = tag.ContainsKey("tideSealsCracked") ? tag.GetInt("tideSealsCracked") : _openedMask;
+            _shrineMask = tag.GetInt("tidePearlShrines");
+        }
 
         public override void NetSend(BinaryWriter writer) => writer.Write((byte)_openedMask);
 
@@ -64,20 +123,114 @@ namespace SoA.Common.Systems
         {
             if (Main.netMode == NetmodeID.MultiplayerClient)
                 return;
+
+            if (_ritualStep != 0 && --_ritualTimer <= 0)
+                FinishRitual();
+
             if (++_tickCounter < CheckIntervalTicks)
                 return;
-
             _tickCounter = 0;
 
             for (int step = 1; step <= MaxSteps; step++)
             {
-                if (IsOpened(step) || !IsStepCleared(step))
+                int bit = 1 << (step - 1);
+                // Святилище ставится при снятии печати; здесь — догоняем миры,
+                // где печать сняли до появления святилищ
+                if (IsOpened(step) && (_shrineMask & bit) == 0)
+                    RaiseShrine(step);
+
+                if ((_crackAnnouncedMask & bit) != 0 || !IsReady(step))
                     continue;
 
-                OpenSeal(step);
-                _openedMask |= 1 << (step - 1);
+                _crackAnnouncedMask |= bit;
+                Broadcast("Mods.SoA.Misc.SealCracked");
             }
         }
+
+        // Одна попытка на печать: если места в шахте не нашлось, повторять каждую секунду незачем
+        private static void RaiseShrine(int step)
+        {
+            _shrineMask |= 1 << (step - 1);
+            if (TryGetSite(step, out TideSealSite site))
+                DepthPearlShrine_tile.TryRaise(site);
+        }
+
+        #region Активация
+
+        // Клиентская сторона ПКМ по замку: в одиночной игре ритуал стартует сразу,
+        // в мультиплеере решает сервер
+        public static void RequestActivation(int step)
+        {
+            if (Main.netMode == NetmodeID.MultiplayerClient)
+            {
+                ModPacket packet = ModContent.GetInstance<SoA>().GetPacket();
+                packet.Write((byte)SoAPacketType.SealActivate);
+                packet.Write((byte)step);
+                packet.Send();
+                return;
+            }
+
+            TryBeginRitual(step, Main.myPlayer);
+        }
+
+        public static void HandlePacket(SoAPacketType type, BinaryReader reader, int whoAmI)
+        {
+            int step = reader.ReadByte();
+            switch (type)
+            {
+                case SoAPacketType.SealActivate when Main.netMode == NetmodeID.Server:
+                    TryBeginRitual(step, whoAmI);
+                    break;
+                case SoAPacketType.SealRitual when Main.netMode == NetmodeID.MultiplayerClient:
+                    TideSealCinematic.Start(step);
+                    break;
+            }
+        }
+
+        private static void TryBeginRitual(int step, int playerIndex)
+        {
+            if (_ritualStep != 0 || !IsReady(step) || !TryGetSite(step, out TideSealSite site))
+                return;
+
+            // Сервер не верит клиенту на слово: активировать можно только стоя у замка
+            Player player = Main.player[playerIndex];
+            if (!player.active || player.dead ||
+                Vector2.DistanceSquared(player.Center, site.LockCenter) > ActivationRangePx * ActivationRangePx)
+                return;
+
+            _ritualStep = step;
+            _ritualTimer = RitualTicks;
+
+            if (Main.netMode == NetmodeID.Server)
+            {
+                ModPacket packet = ModContent.GetInstance<SoA>().GetPacket();
+                packet.Write((byte)SoAPacketType.SealRitual);
+                packet.Write((byte)step);
+                packet.Send();
+            }
+            else
+            {
+                TideSealCinematic.Start(step);
+            }
+        }
+
+        private static void FinishRitual()
+        {
+            int step = _ritualStep;
+            _ritualStep = 0;
+
+            OpenSeal(step);
+            _openedMask |= 1 << (step - 1);
+            RaiseShrine(step);
+            Broadcast("Mods.SoA.Misc.SealBroken" + step);
+
+            // Маска печатей едет в данных мира — без этого клиенты увидят снятую мембрану,
+            // но замок у них останется «готовым»
+            if (Main.netMode == NetmodeID.Server)
+                NetMessage.SendData(MessageID.WorldData);
+        }
+
+        #endregion
 
         // Снятие печати: мембрана исчезает, проход заливается водой обратно,
         // замок переводится во второе состояние
@@ -85,7 +238,6 @@ namespace SoA.Common.Systems
         {
             ushort barrierType = (ushort)ModContent.TileType<TideSealBarrier_tile>();
             ushort sealType = (ushort)ModContent.TileType<TideSeal_tile>();
-            bool announced = false;
 
             foreach (TideSealSite site in TideOfShadowsWorldData.SealSites)
             {
@@ -120,23 +272,45 @@ namespace SoA.Common.Systems
 
                 if (Main.netMode == NetmodeID.Server)
                     NetMessage.SendTileSquare(-1, site.X, site.Y, site.Width, site.Height);
+            }
+        }
 
-                if (!announced)
+        // Только для проверки сцены (команда /soaseal): печать снова считается не снятой,
+        // замок закрыт. Мембрану не возвращает — её умеет ставить только генератор
+        public static void ResetForTesting(int step)
+        {
+            int bit = 1 << (step - 1);
+            _openedMask &= ~bit;
+            _crackAnnouncedMask &= ~bit;
+            _ritualStep = 0;
+
+            ushort sealType = (ushort)ModContent.TileType<TideSeal_tile>();
+            foreach (TideSealSite site in TideOfShadowsWorldData.SealSites)
+            {
+                if (site.Step != step)
+                    continue;
+
+                for (int x = site.X; x < site.X + site.Width; x++)
                 {
-                    Announce(step);
-                    announced = true;
+                    for (int y = site.Y; y < site.Y + site.Height; y++)
+                    {
+                        Tile tile = Main.tile[x, y];
+                        if (tile.HasTile && tile.TileType == sealType && tile.TileFrameX >= TideSeal_tile.StyleWidth)
+                            tile.TileFrameX -= TideSeal_tile.StyleWidth;
+                    }
                 }
             }
         }
 
-        private static void Announce(int step)
+        private static void Broadcast(string key)
         {
-            LocalizedText text = Language.GetText("Mods.SoA.Misc.SealBroken" + step);
+            LocalizedText text = Language.GetText(key);
+            var color = new Color(150, 200, 255);
 
             if (Main.netMode == NetmodeID.Server)
-                Terraria.Chat.ChatHelper.BroadcastChatMessage(text.ToNetworkText(), new Microsoft.Xna.Framework.Color(150, 200, 255));
+                Terraria.Chat.ChatHelper.BroadcastChatMessage(text.ToNetworkText(), color);
             else
-                Main.NewText(text.Value, 150, 200, 255);
+                Main.NewText(text.Value, color);
         }
     }
 }

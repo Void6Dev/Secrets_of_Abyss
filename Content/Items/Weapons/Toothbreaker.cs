@@ -7,7 +7,7 @@ using SoA.Content.Projectiles;
 
 namespace SoA.Content.Items.Weapons
 {
-    // Зубодробилка: молот из клыков ихтиофагов. Весь цикл удара ведёт ToothbreakerClub
+    // Зубодробилка: молот из клыков. Весь цикл удара ведёт ToothbreakerClub
     public class Toothbreaker : ClubItem
     {
         public const string TexturePath = "SoA/Content/Items/Weapons/Toothbreaker";
@@ -25,7 +25,7 @@ namespace SoA.Content.Items.Weapons
         {
             CreateRecipe()
                 .AddIngredient(ModContent.ItemType<Ichthyofang>(), 10)
-                .AddRecipeGroup(SoARecipeGroups.SilverTungstenBar, 12)
+                .AddRecipeGroup(SoARecipeGroups.SilverBar, 12)
                 .AddTile(TileID.Anvils)
                 .Register();
         }

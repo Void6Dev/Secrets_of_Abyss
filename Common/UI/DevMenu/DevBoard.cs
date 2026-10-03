@@ -43,7 +43,7 @@ namespace SoA.Common.UI
         }
     }
 
-    // Доска задач лежит в файле рядом с сейвами, а не в коде: правка файла видна
+    // Доска задач лежит в файле (Docs/DevBoard.txt в исходниках), а не в коде: правка файла видна
     // в игре сразу, без пересборки мода и перезахода. Формат намеренно текстовый —
     // его читают и правят и человек, и Claude, и git видит понятный диff.
     //
@@ -69,7 +69,16 @@ namespace SoA.Common.UI
         // молча проглоченная ошибка в дев-инструменте хуже, чем некрасивая строка
         public static string Error { get; private set; }
 
-        public static string FilePath => Path.Combine(Main.SavePath, FileName);
+        // Доска живёт в исходниках мода, в Docs/DevBoard.txt: её же правит Claude,
+        // и git видит изменения. Файл рядом с сейвами — старое место, берётся,
+        // только если в исходниках доски нет, а там она осталась
+        private static string SourcesFilePath
+            => Path.Combine(Main.SavePath, "ModSources", nameof(SoA), "Docs", "DevBoard.txt");
+
+        private static string SaveFolderFilePath => Path.Combine(Main.SavePath, FileName);
+
+        public static string FilePath
+            => File.Exists(SourcesFilePath) || !File.Exists(SaveFolderFilePath) ? SourcesFilePath : SaveFolderFilePath;
 
         public static string ShotFolderPath => Path.Combine(Main.SavePath, ShotFolderName);
 

@@ -3,7 +3,7 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.DataStructures;
 using SoA.Content.Projectiles;
-using SoA.Common.CustomClasses;
+using SoA.Common.Utils;
 using SoA.Content.Items.Materials;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -13,11 +13,9 @@ namespace SoA.Content.Items.Weapons
 {
     public class ShardedSpear : ModItem
     {
-        private readonly SimpleItemAnimation _anim = new(8, 6);
-
         public override void SetStaticDefaults()
         {
-            Main.RegisterItemAnimation(Type, new DrawAnimationVertical(6, 8));
+            ItemAnimations.Register(Type, frameCount: 8, ticksPerFrame: 6);
         }
 
         public override void SetDefaults()
@@ -67,17 +65,12 @@ namespace SoA.Content.Items.Weapons
             return false;
         }
 
-        public override void UpdateInventory(Player player)
-        {
-            _anim.Update();
-        }
-
         public override bool PreDrawInInventory(SpriteBatch spriteBatch, Vector2 position, Rectangle frame,
             Color drawColor, Color itemColor, Vector2 origin, float scale)
         {
             Texture2D tex = TextureAssets.Item[Type].Value;
-            Rectangle src = _anim.GetFrame(tex);
-            Vector2 drawOrigin = _anim.GetOrigin(tex);
+            Rectangle src = ItemAnimations.Frame(Type, tex);
+            Vector2 drawOrigin = ItemAnimations.Origin(Type, tex);
 
             spriteBatch.Draw(tex, position, src, drawColor, 0f, drawOrigin, scale * 1.3f, SpriteEffects.None, 0f);
             return false;

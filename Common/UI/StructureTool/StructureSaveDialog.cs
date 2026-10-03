@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -6,29 +7,29 @@ using Terraria;
 using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
+using Terraria.ModLoader;
 using SoA.Common.Utils;
 
 namespace SoA.Common.UI
 {
-    // Диалог сохранения постройки: имя, галочки игнорируемых тайлов и превью.
-    // Инструмент отладочный и только для автора, поэтому подписи заданы прямо здесь,
-    // а не через локализацию.
+    // Окно сохранения постройки. Слева — имя, куда сохранить, галочки игнорируемых
+    // тайлов и сводка; справа — интерактивное превью ровно того, что уйдёт в файл.
     public static class StructureSaveDialog
     {
-        private const int PanelWidth = 500;
-        private const int PanelHeight = 300;
-        private const int Padding = 24;
+        private const int LeftColumnWidth = 300;
+        private const int ColumnGap = 24;
         private const int MaxNameLength = 48;
-
-        private const int FieldWidth = 300;
         private const int FieldHeight = 34;
-        private const int CheckboxSize = 18;
-        private const int CheckboxColumnWidth = 170;
-        private const int CheckboxRowHeight = 30;
-        private const int PreviewWidth = 130;
-        private const int PreviewHeight = 150;
-        private const int ButtonHeight = 36;
-        private const int CloseButtonSize = 26;
+        private const int TargetRowY = 98;
+        private const int FiltersLabelY = 132;
+        private const int FiltersTop = 156;
+        private const int FilterColumnWidth = 150;
+        private const int FilterRowHeight = 28;
+        private const int StatsTop = 248;
+        private const int StatsLineHeight = 20;
+        private const int PreviewFooterHeight = 46;
+        private const int CancelButtonWidth = 140;
+        private const int ButtonGap = 10;
 
         // Порядок галочек в две колонки: слева направо, сверху вниз
         private static readonly (StructureFilter Flag, string Key)[] Filters =
@@ -41,12 +42,21 @@ namespace SoA.Common.UI
             (StructureFilter.SkipLightSources, "LightSources")
         };
 
+        private static readonly StructureViewport _preview = new();
+
         private static bool _open;
         private static string _name = string.Empty;
         private static bool _fieldFocused;
         private static Rectangle _area;
+        private static StructureStats _stats;
+        private static bool _sourcesAvailable;
+        private static bool _saveToSources;     // запоминается между открытиями
+        private static string _checkedPath;
+        private static bool _fileExists;
 
         public static bool IsOpen => _open;
+
+        private static Mod Mod => ModContent.GetInstance<StructureToolUi>().Mod;
 
         public static void Open()
         {
@@ -70,10 +80,12 @@ namespace SoA.Common.UI
 
             _open = true;
             _fieldFocused = true;
-            _name = "struct_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            _name = StructureSelection.SourceName ?? "struct_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
             _area = StructureSelection.Bounds;
-            Main.clrInput();
-            StructurePreview.Request(_area, StructureSelection.Cells);
+            _sourcesAvailable = Directory.Exists(StructureIO.SourceDirectory(Mod));
+            _checkedPath = null;
+            StructureToolUi.NotifyModalOpened();
+            Recapture(resetView: true);
         }
 
         public static void Close()
@@ -83,9 +95,21 @@ namespace SoA.Common.UI
 
             _open = false;
             _fieldFocused = false;
-            StructurePreview.Release();
+            _preview.Release();
             StructureToolUi.NotifyDialogClosed();
         }
+
+        // Превью и сводка показывают ровно то, что уйдёт в файл с текущими галочками
+        private static void Recapture(bool resetView)
+        {
+            StructureData data = StructureIO.Capture(_area, StructureSelection.Filters, StructureSelection.Cells);
+            _stats = data.ComputeStats();
+            _preview.Show(data, resetView);
+        }
+
+        private static string TargetDirectory => _saveToSources && _sourcesAvailable
+            ? StructureIO.SourceDirectory(Mod)
+            : StructureIO.ExportDirectory;
 
         // Набранный текст читаем в фазе отрисовки, а не обновления: буфер введённых
         // символов ванилла наполняет позже, и в UpdateUI он ещё пуст — стирание
@@ -122,12 +146,15 @@ namespace SoA.Common.UI
                 return;
             }
 
+            Rectangle panel = StructureDialogFrame.PanelBounds();
+            Rectangle preview = PreviewBounds(panel);
+            _preview.HandleInput(input, preview);
+
             if (!input.LeftClick)
                 return;
 
-            Rectangle panel = PanelBounds();
-
-            if (CloseButtonBounds(panel).Contains(input.Mouse) || CancelButtonBounds(panel).Contains(input.Mouse))
+            if (StructureDialogFrame.CloseButtonBounds(panel).Contains(input.Mouse)
+                || CancelButtonBounds(panel).Contains(input.Mouse))
             {
                 Cancel();
                 return;
@@ -146,6 +173,17 @@ namespace SoA.Common.UI
                 return;
             }
 
+            // Двигать превью можно, не теряя фокус с поля имени
+            if (preview.Contains(input.Mouse))
+                return;
+
+            if (_sourcesAvailable && TargetRowBounds(panel).Contains(input.Mouse))
+            {
+                _saveToSources = !_saveToSources;
+                SoundEngine.PlaySound(SoundID.MenuTick);
+                return;
+            }
+
             for (int i = 0; i < Filters.Length; i++)
             {
                 if (!FilterRowBounds(panel, i).Contains(input.Mouse))
@@ -153,8 +191,7 @@ namespace SoA.Common.UI
 
                 StructureSelection.ToggleFilter(Filters[i].Flag);
                 SoundEngine.PlaySound(SoundID.MenuTick);
-                // Превью показывает ровно то, что уйдёт в файл
-                StructurePreview.Request(_area, StructureSelection.Cells);
+                Recapture(resetView: false);
                 return;
             }
 
@@ -176,9 +213,22 @@ namespace SoA.Common.UI
                 return;
             }
 
-            string path = StructureIO.Export(_area, name, StructureSelection.Filters, StructureSelection.Cells);
-            Main.NewText(ToolText.Get("Chat.Saved", _area.Width, _area.Height, StructureSelection.Count, path),
-                Color.LightGreen);
+            string path = StructureIO.FilePath(TargetDirectory, name);
+            StructureData data = StructureIO.Capture(_area, StructureSelection.Filters, StructureSelection.Cells);
+            try
+            {
+                StructureIO.Write(data, path);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                Main.NewText(ToolText.Get("Chat.SaveFailed", exception.Message), Color.OrangeRed);
+                return;
+            }
+
+            StructureSelection.SetSourceName(name);
+            bool toSources = _saveToSources && _sourcesAvailable;
+            Main.NewText(ToolText.Get(toSources ? "Chat.SavedToSources" : "Chat.Saved",
+                _area.Width, _area.Height, StructureSelection.Count, path), Color.LightGreen);
             Close();
             SoundEngine.PlaySound(SoundID.MenuOpen);
         }
@@ -197,68 +247,74 @@ namespace SoA.Common.UI
             return result.ToString();
         }
 
+        // Проверка диска — только когда имя или папка сменились, а не каждый кадр
+        private static void RefreshFileExists()
+        {
+            string name = SanitizeFileName(_name);
+            string path = name.Length == 0 ? string.Empty : StructureIO.FilePath(TargetDirectory, name);
+            if (path == _checkedPath)
+                return;
+
+            _checkedPath = path;
+            _fileExists = path.Length > 0 && File.Exists(path);
+        }
+
         // --- Раскладка ---
 
-        public static Rectangle PanelBounds()
-            => new((Main.screenWidth - PanelWidth) / 2, (Main.screenHeight - PanelHeight) / 2, PanelWidth, PanelHeight);
-
-        private static Rectangle CloseButtonBounds(Rectangle panel)
-            => new(panel.Right - CloseButtonSize / 2 - 8, panel.Y - CloseButtonSize / 2, CloseButtonSize, CloseButtonSize);
+        private static int LeftX(Rectangle panel) => panel.X + StructureDialogFrame.Padding;
 
         private static Rectangle FieldBounds(Rectangle panel)
-            => new(panel.X + Padding, panel.Y + 62, FieldWidth, FieldHeight);
+            => new(LeftX(panel), panel.Y + 54, LeftColumnWidth, FieldHeight);
+
+        private static Rectangle TargetRowBounds(Rectangle panel)
+            => new(LeftX(panel), panel.Y + TargetRowY, LeftColumnWidth, SoAHudDraw.CheckboxSize + 6);
 
         private static Rectangle FilterRowBounds(Rectangle panel, int index)
-            => new(panel.X + Padding + index % 2 * CheckboxColumnWidth,
-                panel.Y + 136 + index / 2 * CheckboxRowHeight,
-                CheckboxColumnWidth - 10, CheckboxSize + 6);
-
-        private static Rectangle CheckboxBounds(Rectangle row)
-            => new(row.X, row.Y + (row.Height - CheckboxSize) / 2, CheckboxSize, CheckboxSize);
+            => new(LeftX(panel) + index % 2 * FilterColumnWidth,
+                panel.Y + FiltersTop + index / 2 * FilterRowHeight,
+                FilterColumnWidth - 6, SoAHudDraw.CheckboxSize + 6);
 
         private static Rectangle PreviewBounds(Rectangle panel)
-            => new(panel.Right - Padding - PreviewWidth, panel.Y + 62, PreviewWidth, PreviewHeight);
+        {
+            int x = LeftX(panel) + LeftColumnWidth + ColumnGap;
+            int y = panel.Y + StructureDialogFrame.ContentTop;
+            return new Rectangle(x, y, panel.Right - StructureDialogFrame.Padding - x,
+                panel.Bottom - StructureDialogFrame.Padding - PreviewFooterHeight - y);
+        }
 
         private static Rectangle CancelButtonBounds(Rectangle panel)
-            => new(panel.X + Padding + 16, panel.Bottom - Padding - ButtonHeight, 150, ButtonHeight);
+            => new(LeftX(panel), StructureDialogFrame.ButtonTop(panel), CancelButtonWidth, StructureDialogFrame.ButtonHeight);
 
         private static Rectangle SaveButtonBounds(Rectangle panel)
-            => new(panel.Right - Padding - 186, panel.Bottom - Padding - ButtonHeight, 170, ButtonHeight);
+            => new(LeftX(panel) + CancelButtonWidth + ButtonGap, StructureDialogFrame.ButtonTop(panel),
+                LeftColumnWidth - CancelButtonWidth - ButtonGap, StructureDialogFrame.ButtonHeight);
 
         // --- Отрисовка ---
 
         public static void Draw(SpriteBatch spriteBatch)
         {
-            Rectangle panel = PanelBounds();
+            Rectangle panel = StructureDialogFrame.PanelBounds();
             Point mouse = Main.MouseScreen.ToPoint();
+            RefreshFileExists();
 
-            SoAHudDraw.Panel(spriteBatch, panel, SoAHudDraw.PanelFill, SoAHudDraw.PanelBorder);
-            DrawTitleBar(spriteBatch, panel, mouse);
+            StructureDialogFrame.Draw(spriteBatch, panel, ToolText.Get("Dialog.Title"), mouse);
             DrawNameField(spriteBatch, panel);
+            DrawTarget(spriteBatch, panel, mouse);
             DrawFilters(spriteBatch, panel, mouse);
+            DrawStats(spriteBatch, panel);
             DrawPreview(spriteBatch, panel);
-            DrawButtons(spriteBatch, panel, mouse);
-        }
 
-        private static void DrawTitleBar(SpriteBatch spriteBatch, Rectangle panel, Point mouse)
-        {
-            string title = ToolText.Get("Dialog.Title");
-            int titleWidth = (int)SoAHudDraw.Measure(title).X + 60;
-            var titleBar = new Rectangle(panel.X + (panel.Width - titleWidth) / 2, panel.Y - 16, titleWidth, 34);
-            SoAHudDraw.Panel(spriteBatch, titleBar, SoAHudDraw.CancelFill, SoAHudDraw.CancelBorder);
-            SoAHudDraw.TextCentered(spriteBatch, title, titleBar, Color.White);
-
-            Rectangle close = CloseButtonBounds(panel);
-            bool hovered = close.Contains(mouse);
-            SoAHudDraw.Panel(spriteBatch, close, hovered ? SoAHudDraw.CloseBorder : SoAHudDraw.CloseFill,
-                SoAHudDraw.CloseBorder);
-            SoAHudDraw.Cross(spriteBatch, close.Center.ToVector2(), 12, 2.5f, Color.White);
+            SoAHudDraw.Button(spriteBatch, CancelButtonBounds(panel), ToolText.Get("Dialog.Cancel"),
+                SoAHudDraw.CancelFill, SoAHudDraw.CancelBorder, CancelButtonBounds(panel).Contains(mouse));
+            SoAHudDraw.Button(spriteBatch, SaveButtonBounds(panel),
+                ToolText.Get(_fileExists ? "Dialog.Overwrite" : "Dialog.Save"),
+                SoAHudDraw.SaveFill, SoAHudDraw.SaveBorder, SaveButtonBounds(panel).Contains(mouse));
         }
 
         private static void DrawNameField(SpriteBatch spriteBatch, Rectangle panel)
         {
             SoAHudDraw.Text(spriteBatch, ToolText.Get("Dialog.NameLabel"),
-                new Vector2(panel.X + Padding, panel.Y + 34), SoAHudDraw.BodyText, 0.9f);
+                new Vector2(LeftX(panel), panel.Y + StructureDialogFrame.ContentTop), SoAHudDraw.BodyText, 0.9f);
 
             Rectangle field = FieldBounds(panel);
             SoAHudDraw.Panel(spriteBatch, field, new Color(16, 18, 36, 235),
@@ -274,70 +330,72 @@ namespace SoA.Common.UI
                 SoAHudDraw.Pencil(spriteBatch, pencil, SoAHudDraw.DimText);
         }
 
+        // Галочка «в исходники мода» есть, только если исходники лежат на этой машине
+        private static void DrawTarget(SpriteBatch spriteBatch, Rectangle panel, Point mouse)
+        {
+            Rectangle row = TargetRowBounds(panel);
+            if (_sourcesAvailable)
+            {
+                SoAHudDraw.Checkbox(spriteBatch, row, ToolText.Get("Dialog.ToSources"), _saveToSources,
+                    row.Contains(mouse));
+                return;
+            }
+
+            SoAHudDraw.Text(spriteBatch, ToolText.Get("Dialog.ToExport"), new Vector2(row.X, row.Y + 1),
+                SoAHudDraw.DimText, 0.85f);
+        }
+
         private static void DrawFilters(SpriteBatch spriteBatch, Rectangle panel, Point mouse)
         {
             SoAHudDraw.Text(spriteBatch, ToolText.Get("Dialog.FiltersLabel"),
-                new Vector2(panel.X + Padding, panel.Y + 108), SoAHudDraw.BodyText, 0.9f);
+                new Vector2(LeftX(panel), panel.Y + FiltersLabelY), SoAHudDraw.BodyText, 0.9f);
 
             for (int i = 0; i < Filters.Length; i++)
             {
                 Rectangle row = FilterRowBounds(panel, i);
-                Rectangle box = CheckboxBounds(row);
-                bool hovered = row.Contains(mouse);
-                bool checked_ = StructureSelection.HasFilter(Filters[i].Flag);
-
-                SoAHudDraw.Panel(spriteBatch, box, new Color(16, 18, 36, 235),
-                    hovered ? SoAHudDraw.ActiveBorder : SoAHudDraw.PanelBorder);
-                if (checked_)
-                    SoAHudDraw.CheckMark(spriteBatch, box, Color.White);
-
-                SoAHudDraw.Text(spriteBatch, ToolText.Get("Filters." + Filters[i].Key),
-                    new Vector2(box.Right + 8, row.Y + 1),
-                    hovered ? Color.White : SoAHudDraw.BodyText, 0.85f);
+                SoAHudDraw.Checkbox(spriteBatch, row, ToolText.Get("Filters." + Filters[i].Key),
+                    StructureSelection.HasFilter(Filters[i].Flag), row.Contains(mouse));
             }
+        }
+
+        private static void DrawStats(SpriteBatch spriteBatch, Rectangle panel)
+        {
+            var position = new Vector2(LeftX(panel), panel.Y + StatsTop);
+
+            void Line(string text, Color color)
+            {
+                text = StructureDialogFrame.Ellipsize(text, LeftColumnWidth, 0.82f);
+                SoAHudDraw.Text(spriteBatch, text, position, color, 0.82f);
+                position.Y += StatsLineHeight;
+            }
+
+            Line(ToolText.Get("Dialog.StatsSize", _area.Width, _area.Height, _stats.Cells), SoAHudDraw.BodyText);
+            Line(ToolText.Get("Dialog.StatsTiles", _stats.Tiles, _stats.TileKinds), SoAHudDraw.BodyText);
+            Line(ToolText.Get("Dialog.StatsWalls", _stats.Walls, _stats.Liquids), SoAHudDraw.BodyText);
+
+            position.Y += 6;
+            StructureData data = _preview.Data;
+            if (data != null && data.HasChests)
+                Line(ToolText.Get("Dialog.WarnChests"), Color.Orange);
+            if (data != null && data.HasWires)
+                Line(ToolText.Get("Dialog.WarnWires"), Color.Orange);
+            if (_fileExists)
+                Line(ToolText.Get("Dialog.WarnOverwrite"), Color.Orange);
         }
 
         private static void DrawPreview(SpriteBatch spriteBatch, Rectangle panel)
         {
             Rectangle box = PreviewBounds(panel);
-            SoAHudDraw.Panel(spriteBatch, box, new Color(12, 14, 28, 235), SoAHudDraw.PanelBorder);
+            _preview.Draw(spriteBatch, box);
 
-            Texture2D preview = StructurePreview.Texture;
-            if (preview == null)
-            {
-                SoAHudDraw.TextCentered(spriteBatch, "...", box, SoAHudDraw.DimText, 0.9f);
-            }
-            else
-            {
-                // Вписываем превью в рамку по большей стороне, пропорции сохраняем
-                var inner = new Rectangle(box.X + 4, box.Y + 4, box.Width - 8, box.Height - 8);
-                float fit = MathF.Min(inner.Width / (float)preview.Width, inner.Height / (float)preview.Height);
-                int width = Math.Max(1, (int)(preview.Width * fit));
-                int height = Math.Max(1, (int)(preview.Height * fit));
-                spriteBatch.Draw(preview, new Rectangle(
-                    inner.X + (inner.Width - width) / 2, inner.Y + (inner.Height - height) / 2, width, height),
-                    Color.White);
-            }
+            string hover = _preview.DescribeHover();
+            float maxWidth = box.Width;
+            if (hover != null)
+                SoAHudDraw.Text(spriteBatch, StructureDialogFrame.Ellipsize(hover, maxWidth, 0.8f),
+                    new Vector2(box.X, box.Bottom + 6), SoAHudDraw.BodyText, 0.8f);
 
-            string size = $"{_area.Width}x{_area.Height}";
-            SoAHudDraw.Text(spriteBatch, size,
-                new Vector2(box.X + (box.Width - SoAHudDraw.Measure(size, 0.8f).X) / 2f, box.Bottom + 4),
-                SoAHudDraw.DimText, 0.8f);
-        }
-
-        private static void DrawButtons(SpriteBatch spriteBatch, Rectangle panel, Point mouse)
-        {
-            Rectangle cancel = CancelButtonBounds(panel);
-            bool cancelHovered = cancel.Contains(mouse);
-            SoAHudDraw.Panel(spriteBatch, cancel,
-                cancelHovered ? SoAHudDraw.CancelBorder * 0.6f : SoAHudDraw.CancelFill, SoAHudDraw.CancelBorder);
-            SoAHudDraw.TextCentered(spriteBatch, ToolText.Get("Dialog.Cancel"), cancel, Color.White, 0.95f);
-
-            Rectangle save = SaveButtonBounds(panel);
-            bool saveHovered = save.Contains(mouse);
-            SoAHudDraw.Panel(spriteBatch, save,
-                saveHovered ? SoAHudDraw.SaveBorder * 0.6f : SoAHudDraw.SaveFill, SoAHudDraw.SaveBorder);
-            SoAHudDraw.TextCentered(spriteBatch, ToolText.Get("Dialog.Save"), save, Color.White, 0.95f);
+            SoAHudDraw.Text(spriteBatch, StructureDialogFrame.Ellipsize(ToolText.Get("Preview.Hint"), maxWidth, 0.75f),
+                new Vector2(box.X, box.Bottom + 26), SoAHudDraw.DimText, 0.75f);
         }
     }
 }
