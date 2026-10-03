@@ -13,10 +13,16 @@ namespace SoA.Common.Systems.JungleLake
         public static int RightX;
         public static int WaterTopY;
         public static int BedY;      // самое глубокое место чаши
+        // Дно жерла родника. По лору через него озеро «дышит»: сюда привяжутся
+        // тонущие пузыри и Ночь Вдоха. В мирах до родника тут 0
+        public static int SpringX;
+        public static int SpringY;
 
         public static bool Exists => RightX > LeftX && WaterTopY > 0;
 
         public static int CenterX => (LeftX + RightX) / 2;
+
+        public static bool HasSpring => Exists && SpringY > WaterTopY;
 
         // Рядом с озером — это и берег тоже: жабы и стрекозы сидят не в воде,
         // а вокруг, поэтому запас по умолчанию щедрый
@@ -35,6 +41,8 @@ namespace SoA.Common.Systems.JungleLake
             RightX = 0;
             WaterTopY = 0;
             BedY = 0;
+            SpringX = 0;
+            SpringY = 0;
         }
 
         public override void SaveWorldData(TagCompound tag)
@@ -46,6 +54,8 @@ namespace SoA.Common.Systems.JungleLake
             tag["jungleLakeRightX"] = RightX;
             tag["jungleLakeWaterTopY"] = WaterTopY;
             tag["jungleLakeBedY"] = BedY;
+            tag["jungleLakeSpringX"] = SpringX;
+            tag["jungleLakeSpringY"] = SpringY;
         }
 
         public override void LoadWorldData(TagCompound tag)
@@ -54,6 +64,8 @@ namespace SoA.Common.Systems.JungleLake
             RightX = tag.GetInt("jungleLakeRightX");
             WaterTopY = tag.GetInt("jungleLakeWaterTopY");
             BedY = tag.GetInt("jungleLakeBedY");
+            SpringX = tag.GetInt("jungleLakeSpringX");
+            SpringY = tag.GetInt("jungleLakeSpringY");
         }
 
         public override void NetSend(BinaryWriter writer)
@@ -62,6 +74,8 @@ namespace SoA.Common.Systems.JungleLake
             writer.Write(RightX);
             writer.Write(WaterTopY);
             writer.Write(BedY);
+            writer.Write(SpringX);
+            writer.Write(SpringY);
         }
 
         public override void NetReceive(BinaryReader reader)
@@ -70,6 +84,8 @@ namespace SoA.Common.Systems.JungleLake
             RightX = reader.ReadInt32();
             WaterTopY = reader.ReadInt32();
             BedY = reader.ReadInt32();
+            SpringX = reader.ReadInt32();
+            SpringY = reader.ReadInt32();
         }
     }
 }

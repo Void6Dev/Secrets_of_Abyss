@@ -61,6 +61,10 @@ namespace SoA.Common.Utils
             tile.LiquidAmount = 255;
         }
 
+        // Пустота выше этой считается небом. Запас щедрый: даже большая пещера
+        // под джунглями ниже, а парящий остров отсекается по облакам
+        private const int MaxCaveGap = 80;
+
         // Верхний твёрдый тайл настоящей земли. Ищется снизу вверх намеренно:
         // поиск сверху вниз цепляет парящие острова, и столбец под островом
         // отдаёт высоту на две сотни тайлов выше соседей
@@ -79,14 +83,37 @@ namespace SoA.Common.Utils
             if (!IsSolid(x, probeY))
                 return -1;
 
-            // Вверх, пока порода не кончится: так холмы выше линии поверхности
-            // тоже обрабатываются правильно
+            // Вверх сквозь породу и пещеры. Раньше подъём останавливался на первой
+            // пустоте, и полом пещеры под джунглями считался «поверхностью» —
+            // озеро с деревней уходили под землю. Теперь пустоту перешагиваем,
+            // пока она не длиннее пещеры; длиннее — значит, над нами уже небо
             int topY = probeY;
-            while (topY > 60 && IsSolid(x, topY - 1))
-                topY--;
+            int y = probeY - 1;
+            int gap = 0;
+            while (y > 60 && gap <= MaxCaveGap)
+            {
+                if (!IsSolid(x, y))
+                {
+                    gap++;
+                }
+                else
+                {
+                    // Облака и солнечная плита — это остров, а не земля
+                    if (IsSkyIslandBlock(Main.tile[x, y].TileType))
+                        break;
+
+                    topY = y;
+                    gap = 0;
+                }
+                y--;
+            }
 
             return topY;
         }
+
+        private static bool IsSkyIslandBlock(ushort type)
+            => type == TileID.Cloud || type == TileID.RainCloud || type == TileID.SnowCloud
+               || type == TileID.Sunplate;
 
         public static bool IsSolid(int x, int y)
         {

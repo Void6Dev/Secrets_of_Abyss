@@ -12,9 +12,14 @@ namespace SoA.Common.Systems.JungleLake
     // Озеро в джунглях: новое место рыбацкой деревни. Вода здесь обычная джунглевая,
     // к Приливу Теней озеро не относится — это отдельная локация со своей историей.
     //
-    // Чаша длинная и мелкая (15 тайлов): деревня стоит на сваях, а сваи должны
+    // Чаша длинная и мелкая (до 17 тайлов): деревня стоит на сваях, а сваи должны
     // доставать до дна, да и «глубина» тут работает не на опасность, а на вид.
-    // Берег выравнивается под один уровень, иначе зеркало воды получается ступенчатым
+    // Берег выравнивается под один уровень, иначе зеркало воды получается ступенчатым,
+    // а за краями озера рельеф плавно сводится к этому уровню: без сведения озеро
+    // стояло в прямоугольной траншее с отвесными стенками.
+    //
+    // Посередине дна бьёт родник — по лору это отросток Разлома, через который
+    // озеро «дышит» (Docs/JungleVillageConcept.md)
     public class JungleLakePass : GenPass
     {
         private const int MinLength = 150;
@@ -22,9 +27,21 @@ namespace SoA.Common.Systems.JungleLake
         // Ниже этой длины озеро уже не читается длинным, лучше не ставить совсем
         private const int ShortestLength = 80;
         private const int LengthStepDown = 14;
-        private const int LakeDepth = 15;
-        private const int ShoreRampColumns = 9;    // сколько столбцов уходит на плавный вход в воду
+        private const int MaxLakeDepth = 17;
+        // Берега разные: один пологий, заболоченный, другой круче. Одинаковые
+        // съезды с двух сторон делали озеро похожим на вырытую ванну
+        private const int SteepShoreRamp = 10;
+        private const int MarshShoreRamp = 22;
         private const int BedLining = 4;           // подстилка грязи под дном, чтобы чаша не текла
+        // Сколько столбцов за краем озера уходит на сведение рельефа к уровню берега
+        private const int BankBlendColumns = 30;
+        private const int SpringDepth = 10;        // глубина жерла родника ниже дна
+        private const int SpringLining = 2;
+        private const float MinJungleShare = 0.75f;
+        private const float CenterPullPerTile = 0.06f;
+        private const int TreePadHalfWidth = 2;    // ванильному дереву нужна ровная площадка 5 тайлов
+        private const int MinTreeSpacing = 6;
+        private const int MaxTreeSpacing = 10;
         private const int SearchRadius = 700;
         private const int SearchStep = 6;
         // Разброс высот в 18 тайлов джунгли не выдерживают: на 150 столбцов холмов
@@ -37,7 +54,7 @@ namespace SoA.Common.Systems.JungleLake
         private const int NoiseChannel = 77;
 
         // Мель под камыш и открытая вода под кувшинки
-        private const int ReedMaxDepth = 4;
+        private const int ReedMaxDepth = 5;
         private const int LilyMinDepth = 5;
 
         // Почему участок не подошёл. Нужно только для диагностики в логе
@@ -89,16 +106,30 @@ namespace SoA.Common.Systems.JungleLake
 
             SoALog.Info("JungleLake", $"озеро: x={leftX}..{leftX + length - 1}, берег y={bankY}, длина={length}");
 
-            int deepestY = CarveBasin(leftX, length, bankY);
+            // Какой берег заболоченный — решает мир, а не код
+            bool marshOnLeft = WorldGen.genRand.NextBool();
+            int leftRamp = marshOnLeft ? MarshShoreRamp : SteepShoreRamp;
+            int rightRamp = marshOnLeft ? SteepShoreRamp : MarshShoreRamp;
+
+            int deepestY = CarveBasin(leftX, length, bankY, leftRamp, rightRamp);
+            CarveSpring(leftX, length, bankY, leftRamp, rightRamp, out int springX, out int springBottomY);
+
+            BlendBank(leftX, -1, bankY);
+            BlendBank(leftX + length - 1, 1, bankY);
             DressBanks(leftX, length, bankY);
+            PlantShoreTrees(leftX, -1);
+            PlantShoreTrees(leftX + length - 1, 1);
 
             JungleLakeWorldData.LeftX = leftX;
             JungleLakeWorldData.RightX = leftX + length - 1;
             JungleLakeWorldData.WaterTopY = bankY + 1;
             JungleLakeWorldData.BedY = deepestY;
+            JungleLakeWorldData.SpringX = springX;
+            JungleLakeWorldData.SpringY = springBottomY;
 
-            WorldGen.RangeFrame(leftX - 6, bankY - ClearAboveHeight - 4,
-                leftX + length + 6, deepestY + BedLining + 6);
+            int margin = BankBlendColumns + 6;
+            WorldGen.RangeFrame(leftX - margin, bankY - ClearAboveHeight - 4,
+                leftX + length + margin, Math.Max(deepestY, springBottomY) + BedLining + 6);
         }
 
         // Ищем ровный участок джунглей: чем меньше разброс высот, тем меньше
@@ -133,8 +164,9 @@ namespace SoA.Common.Systems.JungleLake
                     continue;
                 }
 
-                // К центру джунглей тянемся, но ровность важнее
-                float score = spread + Math.Abs(left + length / 2 - origin) * 0.02f;
+                // К центру джунглей тянемся заметно: на слабой тяге выигрывал
+                // ровный край джунглей, и полозера оказывалось на обычной земле
+                float score = spread + Math.Abs(left + length / 2 - origin) * CenterPullPerTile;
 
                 if (score < flattestScore)
                 {
@@ -203,7 +235,7 @@ namespace SoA.Common.Systems.JungleLake
 
                 // Чужие постройки участок отменяют, а вода и стены нет: лужи и джунглевый
                 // фон тут норма, чаша всё равно перекладывается грязью и заливается заново
-                for (int y = groundY; y <= groundY + LakeDepth + BedLining; y++)
+                for (int y = groundY; y <= groundY + MaxLakeDepth + BedLining; y++)
                 {
                     if (!GenTiles.InBounds(x, y))
                     {
@@ -212,7 +244,7 @@ namespace SoA.Common.Systems.JungleLake
                     }
 
                     Tile probe = Main.tile[x, y];
-                    if (probe.TileType == TileID.LihzahrdBrick || Main.tileContainer[probe.TileType])
+                    if (IsProtected(probe))
                     {
                         reject = RejectReason.Structure;
                         return false;
@@ -228,15 +260,15 @@ namespace SoA.Common.Systems.JungleLake
             // по уровню земли, и условие «вся чаша выше неё» отбраковывало все окна
             // подряд. Поверхность гарантирует сам FindGroundTop, а от подземелья
             // достаточно того, что чаша не достаёт до каменного слоя
-            if (max + LakeDepth + BedLining >= (int)Main.rockLayer)
+            if (max + MaxLakeDepth + SpringDepth + SpringLining >= (int)Main.rockLayer)
             {
                 reject = RejectReason.Layer;
                 return false;
             }
 
-            // Джунглями считаем участок, если хотя бы половина столбцов на грязи:
-            // на поверхности хватает камня, песка и проплешин
-            if (jungleColumns < length * 0.5f)
+            // Джунглями считаем участок, где грязи большинство: на поверхности
+            // хватает камня и проплешин, но половины мало — озеро вставало на границе
+            if (jungleColumns < length * MinJungleShare)
             {
                 reject = RejectReason.NotJungle;
                 return false;
@@ -254,7 +286,7 @@ namespace SoA.Common.Systems.JungleLake
         }
 
         // Возвращает Y самой глубокой точки чаши
-        private static int CarveBasin(int leftX, int length, int bankY)
+        private static int CarveBasin(int leftX, int length, int bankY, int leftRamp, int rightRamp)
         {
             int waterTopY = bankY + 1;
             int deepestY = waterTopY;
@@ -262,7 +294,7 @@ namespace SoA.Common.Systems.JungleLake
             for (int i = 0; i < length; i++)
             {
                 int x = leftX + i;
-                int depth = DepthAt(x, i, length);
+                int depth = DepthAt(x, i, length, leftRamp, rightRamp);
 
                 ClearAbove(x, bankY);
 
@@ -274,8 +306,22 @@ namespace SoA.Common.Systems.JungleLake
                         GenTiles.PlaceSolid(x, y, TileID.Mud);
                 }
 
+                // Ряд берега над водой обязан быть открыт. Раньше он оставался
+                // грязью и зарастал травой: озеро лежало под сплошной крышкой,
+                // камыш и кувшинки не ставились, а сваи упирались в крышку
+                if (depth > 0)
+                {
+                    GenTiles.Clear(x, bankY);
+                    Main.tile[x, bankY].WallType = WallID.None;
+                }
+
+                // Стены под водой снимаем: озеро, вырытое в склон, иначе стоит
+                // на подземном фоне и читается пещерой, а не открытой водой
                 for (int y = waterTopY; y <= bankY + depth; y++)
+                {
                     GenTiles.Flood(x, y);
+                    Main.tile[x, y].WallType = WallID.None;
+                }
 
                 deepestY = Math.Max(deepestY, bankY + depth);
             }
@@ -283,14 +329,155 @@ namespace SoA.Common.Systems.JungleLake
             return deepestY;
         }
 
-        // Плавные съезды с берегов и рваное дно посередине: ровная ванна читается
-        // как вырытый котлован, а не как озеро
-        private static int DepthAt(int x, int column, int length)
+        // Съезды с берегов разной длины и волнистое дно: две-три ямы и отмели
+        // между ними. Раньше дно упиралось в жёсткий предел и лежало ровной плитой
+        private static int DepthAt(int x, int column, int length, int leftRamp, int rightRamp)
         {
-            float ramp = TideNoise.Clamp01(Math.Min(column, length - 1 - column) / (float)ShoreRampColumns);
-            float relief = 0.82f + 0.3f * TideNoise.Fbm(x * 0.03f, NoiseChannel, 3);
-            int depth = (int)MathF.Round(LakeDepth * ramp * relief);
-            return Math.Clamp(depth, 0, LakeDepth);
+            float fromLeft = column / (float)leftRamp;
+            float fromRight = (length - 1 - column) / (float)rightRamp;
+            float ramp = TideNoise.SmoothStep(0f, 1f, Math.Min(fromLeft, fromRight));
+
+            // Fbm жмётся к 0.5, поэтому разброс растягиваем: иначе ямы и отмели
+            // отличаются на пару тайлов и дно всё равно читается плитой
+            float noise = TideNoise.Clamp01((TideNoise.Fbm(x * 0.022f, NoiseChannel, 3) - 0.5f) * 2.4f + 0.5f);
+            float relief = 0.4f + 0.7f * noise;
+            float depth = TideNoise.SoftMin(MaxLakeDepth * relief, MaxLakeDepth, 3f) * ramp;
+            return Math.Clamp((int)MathF.Round(depth), 0, MaxLakeDepth);
+        }
+
+        // Родник — узкое жерло в самой глубокой части средней трети дна. Обложено
+        // грязью со всех сторон: под озером могут быть пещеры, и вода не должна уйти
+        private static void CarveSpring(int leftX, int length, int bankY, int leftRamp, int rightRamp,
+            out int springX, out int springBottomY)
+        {
+            int searchFrom = length / 3, searchTo = length * 2 / 3;
+            int bestColumn = length / 2, bestDepth = -1;
+            for (int i = searchFrom; i <= searchTo; i++)
+            {
+                int depth = DepthAt(leftX + i, i, length, leftRamp, rightRamp);
+                if (depth > bestDepth)
+                {
+                    bestDepth = depth;
+                    bestColumn = i;
+                }
+            }
+
+            springX = leftX + bestColumn;
+            int bedY = bankY + bestDepth;
+            springBottomY = bedY + SpringDepth;
+
+            int outer = 1 + SpringLining;
+            for (int y = bedY + 1; y <= springBottomY + SpringLining; y++)
+            {
+                // Жерло сужается книзу: сверху три тайла, у дна два
+                int halfRight = y - bedY > SpringDepth / 2 ? 0 : 1;
+
+                for (int dx = -outer; dx <= outer; dx++)
+                {
+                    int x = springX + dx;
+                    bool inVent = y <= springBottomY && dx >= -1 && dx <= halfRight;
+
+                    if (inVent)
+                    {
+                        GenTiles.Flood(x, y);
+                        Main.tile[x, y].WallType = WallID.None;
+                    }
+                    else if (!GenTiles.IsSolid(x, y))
+                    {
+                        GenTiles.PlaceSolid(x, y, TileID.Mud);
+                    }
+                }
+            }
+        }
+
+        // Сводит рельеф за краем озера к уровню берега: холм срезается в склон,
+        // низина подсыпается. Нужен пологий спуск к воде, а не стенка траншеи
+        private static void BlendBank(int edgeX, int direction, int bankY)
+        {
+            for (int step = 1; step <= BankBlendColumns; step++)
+            {
+                int x = edgeX + direction * step;
+                int naturalY = GenTiles.FindGroundTop(x);
+                if (naturalY == -1)
+                    return;
+
+                float t = TideNoise.SmoothStep(0f, 1f, step / (float)BankBlendColumns);
+                int targetY = (int)MathF.Round(TideNoise.Lerp(bankY, naturalY, t));
+                if (targetY == naturalY)
+                    continue;
+
+                // Дальше чужой постройки берег не трогаем: лучше короткий склон,
+                // чем срезанный храм
+                if (TouchesProtected(x, Math.Min(naturalY, targetY) - ClearAboveHeight, Math.Max(naturalY, targetY)))
+                    return;
+
+                ClearAbove(x, Math.Max(naturalY, targetY));
+
+                // Подсыпаем низину до нового уровня. Срезанному холму тоже нужна
+                // корка: срез мог вскрыть пещеру, и склон остался бы с дырой
+                for (int y = targetY; y < Math.Max(naturalY, targetY + 3); y++)
+                {
+                    if (!GenTiles.IsSolid(x, y))
+                        GenTiles.PlaceSolid(x, y, TileID.Mud);
+                }
+
+                if (Main.tile[x, targetY].TileType == TileID.Mud)
+                    GenTiles.PlaceSolid(x, targetY, TileID.JungleGrass);
+            }
+        }
+
+        // Склоны после сведения голые: ровная лысина вокруг озера выдаёт генератор
+        // сильнее всего. Сажаем деревья через ванильный рост, чтобы порода дерева
+        // взялась от джунглевой травы
+        private static void PlantShoreTrees(int edgeX, int direction)
+        {
+            int step = WorldGen.genRand.Next(3, MinTreeSpacing + 1);
+            while (step <= BankBlendColumns + MinTreeSpacing)
+            {
+                int x = edgeX + direction * step;
+                int groundY = GenTiles.FindGroundTop(x);
+                if (groundY != -1 && Main.tile[x, groundY].TileType == TileID.JungleGrass
+                    && LevelTreePad(x, groundY))
+                {
+                    WorldGen.GrowTree(x, groundY);
+                }
+
+                step += WorldGen.genRand.Next(MinTreeSpacing, MaxTreeSpacing + 1);
+            }
+        }
+
+        // На сведённом склоне ровных пяти тайлов почти не бывает, и дерево
+        // не вырастало ни одно. Подрезаем под ствол маленькую ступеньку
+        private static bool LevelTreePad(int centerX, int groundY)
+        {
+            for (int dx = -TreePadHalfWidth; dx <= TreePadHalfWidth; dx++)
+            {
+                if (TouchesProtected(centerX + dx, groundY - ClearAboveHeight, groundY + 1))
+                    return false;
+            }
+
+            for (int dx = -TreePadHalfWidth; dx <= TreePadHalfWidth; dx++)
+            {
+                int x = centerX + dx;
+                ClearAbove(x, groundY);
+                GenTiles.PlaceSolid(x, groundY, TileID.JungleGrass);
+                if (!GenTiles.IsSolid(x, groundY + 1))
+                    GenTiles.PlaceSolid(x, groundY + 1, TileID.Mud);
+            }
+            return true;
+        }
+
+        private static bool IsProtected(Tile tile)
+            => tile.HasTile && (tile.TileType == TileID.LihzahrdBrick || Main.tileContainer[tile.TileType]);
+
+        private static bool TouchesProtected(int x, int fromY, int toY)
+        {
+            for (int y = fromY; y <= toY; y++)
+            {
+                if (GenTiles.InBounds(x, y) && IsProtected(Main.tile[x, y]))
+                    return true;
+            }
+            return false;
         }
 
         // Деревья и лианы над будущим озером снимаем через KillTile: срезанные
@@ -308,6 +495,10 @@ namespace SoA.Common.Systems.JungleLake
 
                 if (tile.LiquidAmount > 0)
                     tile.LiquidAmount = 0;
+
+                // Подземные стены над срезанным грунтом закрывают небо, и берег
+                // выглядит дном пещеры
+                tile.WallType = WallID.None;
             }
         }
 
@@ -350,7 +541,7 @@ namespace SoA.Common.Systems.JungleLake
         private static int WaterDepthAt(int x, int waterTopY, int bankY)
         {
             int depth = 0;
-            for (int y = waterTopY; y < bankY + LakeDepth + 2; y++)
+            for (int y = waterTopY; y < bankY + MaxLakeDepth + 2; y++)
             {
                 if (!GenTiles.InBounds(x, y))
                     break;
