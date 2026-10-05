@@ -358,6 +358,7 @@ Mods: {
 			// ScytheOfFireStormClub.DisplayName: Scythe Of Fire Storm Club
 			// FirestormBurst.DisplayName: Firestorm Burst
 			// InfernoShurikenHeld.DisplayName: Inferno Shuriken Held
+			// KingCrabSandClaw.DisplayName: King Crab Sand Claw
 		}
 
 		Buffs: {
@@ -426,7 +427,7 @@ Mods: {
 			// SealBroken2: The second seal cracks — the trench draws breath.
 			// SealBroken3: The third seal cracks — the pinch of the trench yields.
 			// SealBroken4: The last seal cracks — the Heart of the Abyss lies open.
-			SealCracked: Где-то в глубине по печати пошла трещина. Она ждёт, чтобы её открыли.
+			SealCracked: Где-то в глубине по печати пошла трещина. Подойди — и она расколется.
 			// PressureDeath: "{0} was crushed by the weight of the deep"
 			ShrineEmpty: Святилище тебе больше ничего не даст.
 		}

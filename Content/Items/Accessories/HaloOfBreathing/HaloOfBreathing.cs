@@ -1,7 +1,7 @@
 using Terraria;
 using Terraria.ModLoader;
 using Terraria.ID;
-using SoA.Content.Items.Placebles;
+using SoA.Content.Items.Placeables;
 
 namespace SoA.Content.Items.Accessories
 {

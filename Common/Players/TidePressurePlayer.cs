@@ -8,7 +8,7 @@ using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
 using SoA.Common.Systems;
 using SoA.Content.Buffs;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Common.Players
 {

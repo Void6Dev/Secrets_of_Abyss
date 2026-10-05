@@ -4,8 +4,10 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Content.Items.Critters;
 using SoA.Content.Items.Materials;
-using SoA.Content.Items.Placebles;
-using SoA.Content.Tiles.Other;
+using SoA.Content.Items.Placeables;
+using SoA.Content.Tiles.Furniture;
+using SoA.Content.Tiles.Lighthouse;
+using SoA.Content.Tiles.Shrines;
 
 namespace SoA.Content.Items.Fishing
 {

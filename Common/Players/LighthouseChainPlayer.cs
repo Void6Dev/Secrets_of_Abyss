@@ -3,8 +3,10 @@ using Terraria;
 using Terraria.DataStructures;
 using Terraria.ModLoader;
 using SoA.Common.Systems;
-using SoA.Content.Items.Placebles;
-using SoA.Content.Tiles.Other;
+using SoA.Content.Items.Placeables;
+using SoA.Content.Tiles.Furniture;
+using SoA.Content.Tiles.Lighthouse;
+using SoA.Content.Tiles.Shrines;
 
 namespace SoA.Common.Players
 {

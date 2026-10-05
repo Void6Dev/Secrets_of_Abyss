@@ -2,7 +2,7 @@ using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Content.Items.Materials;
-using SoA.Content.Items.Placebles;
+using SoA.Content.Items.Placeables;
 
 namespace SoA.Content.Items.BossSummons
 {

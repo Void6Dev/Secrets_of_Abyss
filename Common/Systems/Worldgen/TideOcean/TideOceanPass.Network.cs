@@ -7,9 +7,11 @@ using Terraria.ModLoader;
 using Terraria.WorldBuilding;
 using SoA.Common.Utils;
 using SoA.Content.Tiles.Nature;
-using SoA.Content.Tiles.Other;
+using SoA.Content.Tiles.Furniture;
+using SoA.Content.Tiles.Lighthouse;
+using SoA.Content.Tiles.Shrines;
 using SoA.Content.Walls;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Common.Systems.TideOcean
 {

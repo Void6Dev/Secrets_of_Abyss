@@ -58,6 +58,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 // в стойке рисунок не повторяется. В атаках гасится _calmness.
                 wrist.Y += _breathClaw * (1f + i * 0.4f) * _calmness;
 
+                // Позвали с алтаря: передняя клешня тянется в чашу за жемчужиной
+                if (i == 0)
+                    wrist = FeastReach(wrist, pose);
+
                 // Отставание на 1–3 тика: рука тяжёлая и на рывке не поспевает за телом
                 _clawLag[i] = sharp
                     ? Vector2.Lerp(_clawLag[i], wrist, ClawLagRate)
@@ -163,15 +167,22 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             // Коготь раскрывается, отходя вверх от неподвижной половины пинцера.
             // Рисуем его ПОД базой: в авторском спрайте кромка серпа перекрывает коготь.
             float tipRot = rot + side * open * ClawOpenAngle;
+            PrepareDissolve(tipTex);
             spriteBatch.Draw(tipTex, hingeWorld - screenPos, null, drawColor, tipRot, tipOrigin, scale, fx, 0f);
+
+            // Точка хвата между половинами пинцера: там лежит жемчужина (King_crab.Feast.cs)
+            Vector2 gripTex = ClawBaseGrip - ClawBaseShoulder;
+            _clawGripWorld[idx] = wristWorld + (new Vector2(flip ? -gripTex.X : gripTex.X, gripTex.Y) * scale).RotatedBy(rot);
+            DrawPearlInClaw(spriteBatch, idx, screenPos, drawColor);
+
+            PrepareDissolve(baseTex);
             spriteBatch.Draw(baseTex, wristWorld - screenPos, null, drawColor, rot, baseOrigin, scale, fx, 0f);
         }
 
         // Рука плечо→запястье: двухкостный IK, локоть через теорему косинусов (как у ног).
         // Рисуется ПОД клешнёй — её «нарост» ClawBaseShoulder накрывает запястный сустав.
-        // Сегменты круглые, поэтому при выносе запястья дальше суммы костей рука не клампится,
-        // а РАСТЯГИВАЕТСЯ: шары просто расходятся, и связка с клешнёй не рвётся на выпадах
-        // (вытянутые сегменты раньше маскировали разрыв собой, круглые — не маскируют).
+        // При выносе запястья дальше суммы костей рука не клампится, а РАСТЯГИВАЕТСЯ:
+        // кости удлиняются, сегменты вытягиваются вдоль них — связка с клешнёй не рвётся на выпадах.
         private void DrawArm(SpriteBatch spriteBatch, Vector2 shoulder, Vector2 wrist, bool flip, float armScale, Vector2 screenPos, Color drawColor)
         {
             Texture2D upper = _armUpper.Value;
@@ -194,15 +205,25 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             float bendSign = ArmElbowSign * (flip ? -1f : 1f);
             Vector2 elbow = shoulder + new Vector2(l1, 0f).RotatedBy(baseAngle + bendSign * offset);
 
-            // Сегменты круглые: доворачивать их вдоль руки незачем — поворот гонял бы блик по кругу.
-            // А вот зеркалить надо ВМЕСТЕ С КЛЕШНЁЙ (тот же flip): блик на шарах направленный,
-            // и на отражённой стороне он обязан смотреть в ту же сторону, что и на клешне.
-            SpriteEffects fx = flip ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
-            Vector2 upperOrigin = flip ? new Vector2(upper.Width - ArmUpperPivot.X, ArmUpperPivot.Y) : ArmUpperPivot;
-            Vector2 lowerOrigin = flip ? new Vector2(lower.Width - ArmLowerPivot.X, ArmLowerPivot.Y) : ArmLowerPivot;
+            // Зеркалим ВМЕСТЕ С КЛЕШНЁЙ (тот же flip): блик на сегментах направленный.
+            // Предплечье первым — плечевой сегмент ложится поверх локтя
+            PrepareDissolve(lower);
+            DrawArmSegment(spriteBatch, lower, elbow, wrist, ArmLowerJoint, ArmBoneLowerPx, flip, armScale, screenPos, drawColor);
+            PrepareDissolve(upper);
+            DrawArmSegment(spriteBatch, upper, shoulder, elbow, ArmUpperJoint, ArmBoneUpperPx, flip, armScale, screenPos, drawColor);
+        }
 
-            spriteBatch.Draw(upper, shoulder - screenPos, null, drawColor, 0f, upperOrigin, armScale, fx, 0f);
-            spriteBatch.Draw(lower, elbow - screenPos, null, drawColor, 0f, lowerOrigin, armScale, fx, 0f);
+        // Сегмент от сустава from к суставу to: ось текстуры (+Y) — вдоль кости; растянутую
+        // кость сегмент догоняет вытяжкой по длине, а не разрывом
+        private static void DrawArmSegment(SpriteBatch spriteBatch, Texture2D tex, Vector2 from, Vector2 to,
+            Vector2 joint, float spanPx, bool flip, float armScale, Vector2 screenPos, Color drawColor)
+        {
+            float rot = (to - from).ToRotation() - MathHelper.PiOver2;
+            float stretch = Math.Max(1f, Vector2.Distance(from, to) / (spanPx * armScale));
+            Vector2 origin = flip ? new Vector2(tex.Width - joint.X, joint.Y) : joint;
+            SpriteEffects fx = flip ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+            spriteBatch.Draw(tex, from - screenPos, null, drawColor, rot, origin,
+                new Vector2(armScale, armScale * stretch), fx, 0f);
         }
 
         // «Лицевое» пространство → мир: отражаем X по направлению взгляда, наклоняем на угол тела,

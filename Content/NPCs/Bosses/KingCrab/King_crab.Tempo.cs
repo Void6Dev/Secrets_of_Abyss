@@ -18,18 +18,18 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
     public partial class King_crab
     {
         // ---------- ТЕМП ПО ЗДОРОВЬЮ ----------
-        private const float TempoFullHealth = 0.8f;    // скорость замахов и отходов в начале боя
-        private const float TempoNearDeath = 1.3f;     // и на последних HP
+        private const float TempoFullHealth = 0.65f;   // скорость замахов и отходов в начале боя: каждый замах успевается прочитать
+        private const float TempoNearDeath = 1.2f;     // и на последних HP
         private const float WalkSpeedFullHealth = 3.4f;
         private const float WalkSpeedNearDeath = 7.8f;
-        private const float PauseFullHealth = 110f;    // пауза между атаками, тики
-        private const float PauseNearDeath = 24f;
+        private const float PauseFullHealth = 135f;    // пауза между атаками, тики
+        private const float PauseNearDeath = 40f;      // у края смерти всё ещё есть вдох между атаками
         private const float PauseCurve = 0.8f;         // < 1: пауза сокращается заметнее уже с первых потерь
 
         // ---------- СВЯЗКИ ----------
         private const float ComboStartHealth = 0.75f;  // выше этой доли HP связок нет
         private const float ComboFullHealth = 0.15f;   // здесь шанс связки максимален
-        private const float ComboMaxChance = 0.9f;
+        private const float ComboMaxChance = 0.65f;
         private const int ComboGapTicks = 12;          // короткий вдох между атаками связки
         private const int ComboMaxLengthDesperate = 2; // продолжений подряд в агонии (до неё — одно)
 

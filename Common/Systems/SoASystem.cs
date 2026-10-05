@@ -69,6 +69,24 @@ namespace SoA.Common.Systems
                 "PopPass"
             );
 
+            // Вращающийся рисунок печати прилива (TideSeal_tile)
+            GameShaders.Misc["SoA:SealSigil"] = new MiscShaderData(
+                Mod.Assets.Request<Effect>("Assets/Effects/SealSigil", AssetRequestMode.ImmediateLoad),
+                "SigilPass"
+            );
+
+            // Зона удара: общий телеграф атак босса (рамка, полосы, заливка-таймер)
+            GameShaders.Misc["SoA:DangerZone"] = new MiscShaderData(
+                Mod.Assets.Request<Effect>("Assets/Effects/DangerZone", AssetRequestMode.ImmediateLoad),
+                "ZonePass"
+            );
+
+            // Ударная волна короля: грунт вздымается шипами у фронта и оседает позади
+            GameShaders.Misc["SoA:GroundRupture"] = new MiscShaderData(
+                Mod.Assets.Request<Effect>("Assets/Effects/GroundRupture", AssetRequestMode.ImmediateLoad),
+                "RupturePass"
+            );
+
             GameShaders.Misc["SoA:BurrowBurst"] = new MiscShaderData(
                 Mod.Assets.Request<Effect>("Assets/Effects/BurrowBurst", AssetRequestMode.ImmediateLoad),
                 "BurstPass"
@@ -79,6 +97,12 @@ namespace SoA.Common.Systems
             GameShaders.Misc["SoA:CrabAura"] = new MiscShaderData(
                 Mod.Assets.Request<Effect>("Assets/Effects/CrabRegalia", AssetRequestMode.ImmediateLoad),
                 "AuraPass"
+            );
+
+            // Рассыпание короля в сцене смерти: раскалённая кромка (King_crab.DeathFx.cs)
+            GameShaders.Misc["SoA:CrabDissolve"] = new MiscShaderData(
+                Mod.Assets.Request<Effect>("Assets/Effects/CrabRegalia", AssetRequestMode.ImmediateLoad),
+                "DissolvePass"
             );
 
             GameShaders.Misc["SoA:CrabRing"] = new MiscShaderData(

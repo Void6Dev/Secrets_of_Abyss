@@ -4,7 +4,7 @@ using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Utils;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Common.Players
 {

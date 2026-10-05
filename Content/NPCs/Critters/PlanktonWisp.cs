@@ -3,7 +3,7 @@ using Terraria.GameContent.Bestiary;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Content.Items.Critters;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Content.NPCs.Critters
 {

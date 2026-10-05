@@ -46,11 +46,11 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     BuildBubbleVolley(), BuildTideCall(),
                     BuildJumpCrouch(), BuildJumpRise(), BuildJumpApex(), BuildJumpFall(), BuildJumpLand(),
                     BuildGripWindup(), BuildGripLunge(), BuildGripRecover(),
-                    BuildRoar(), BuildRoarRelease(),
+                    BuildRoar(), BuildRoarRelease(), BuildFeast(),
                     BuildCrownCommand(),
                     BuildTsunamiClap(), BuildClapRecover(),
-                    BuildBurrowDive(), BuildBurrowSwim(), BuildBurrowErupt(),
-                    BuildProud(), BuildDispleased(), BuildGuardCrown(), BuildDeath(),
+                    BuildBurrowDive(), BuildBurrowSwim(), BuildBurrowErupt(), BuildSwimGlide(),
+                    BuildProud(), BuildDispleased(), BuildStagger(), BuildGuardCrown(), BuildDeath(),
                     BuildRageIgnite(), BuildRageHunt(), BuildRageGrab(),
                     // --- Один-шот реакции (аддитивны поверх базы) ---
                     BuildTurn(), BuildHurtLight(), BuildHurt(), BuildHurtHeavy(),
@@ -715,6 +715,73 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             .Key(LayerEyes, 26f, aux: 0.5f)
             .Event(1f, "roar_release");
 
+        // ЛАКОМСТВО (King_crab.Feast.cs): замах назад → клешня в чашу, пинцер раскрыт → клац →
+        // подъём над головой → подброс → пасть ловит → два жевка → хруст → довольно раздувается.
+        // Положение передней клешни на хвате задаёт IK (FeastReach), клип даёт только наклон
+        // и раскрытие пинцера; к подбросу IK отпускает, и клешню задирают ключи ниже
+        private static AnimClip BuildFeast() => new AnimClip("feast", FeastTicks, loop: false)
+            .Key(LayerBody, 0f, rot: -0.06f, oy: -8f, aux: -0.18f)              // из гордой стойки
+            .Key(LayerBody, 6f, rot: -0.1f, oy: -10f, aux: -0.2f)               // anticipation: подался назад
+            .Key(LayerBody, 26f, rot: 0.12f, ox: 12f, oy: 8f, aux: 0.08f, ease: EaseMode.EaseOut) // склонился к чаше
+            .Key(LayerBody, 34f, rot: 0.14f, ox: 13f, oy: 10f, aux: 0.1f)
+            .Key(LayerBody, 38f, rot: 0.12f, ox: 12f, oy: 8f, aux: 0.08f)
+            .Key(LayerBody, 52f, rot: -0.04f, ox: 2f, oy: -4f, aux: -0.06f)
+            .Key(LayerBody, FeastTossTick, rot: -0.14f, oy: -12f, aux: -0.14f, ease: EaseMode.EaseOut) // задрал морду
+            .Key(LayerBody, 74f, rot: -0.16f, oy: -13f, aux: -0.16f)
+            .Key(LayerBody, FeastChompTick, rot: 0.05f, oy: 4f, aux: 0.24f, ease: EaseMode.EaseIn) // поймал: плюх
+            .Key(LayerBody, 80f, rot: -0.02f, oy: -2f, aux: -0.05f)
+            .Key(LayerBody, 85f, oy: 1f, aux: 0.04f)
+            .Key(LayerBody, FeastChewTick, oy: 3f, aux: 0.18f)                  // жевок
+            .Key(LayerBody, 92f, oy: -1f, aux: -0.04f)
+            .Key(LayerBody, FeastCrunchTick, rot: 0.04f, oy: 5f, aux: 0.26f, ease: EaseMode.EaseIn) // хруст
+            .Key(LayerBody, 103f, rot: -0.05f, oy: -6f, aux: -0.12f)            // перелёт вверх
+            .Key(LayerBody, 112f, rot: -0.07f, oy: -10f, aux: -0.2f)            // смакует, раздулся
+            .Key(LayerBody, FeastTicks, rot: -0.06f, oy: -8f, aux: -0.18f)
+            .Key(LayerClawFront, 0f, rot: 0.5f, ox: -6f, oy: -12f, aux: 0.35f)
+            .Key(LayerClawFront, 6f, rot: 0.6f, ox: -14f, oy: -18f, aux: 0.2f, ease: EaseMode.EaseOut)
+            .Key(LayerClawFront, 22f, rot: -0.25f, ox: 10f, oy: 20f, aux: 0.75f) // раскрыл пинцер над чашей
+            .Key(LayerClawFront, 30f, rot: -0.35f, ox: 10f, oy: 22f, aux: 0.8f)
+            .Key(LayerClawFront, FeastGrabTick, rot: -0.32f, ox: 10f, oy: 22f, aux: -0.25f, ease: EaseMode.EaseIn) // клац
+            .Key(LayerClawFront, 38f, rot: -0.3f, ox: 10f, oy: 22f, aux: -0.1f)
+            .Key(LayerClawFront, FeastLiftStart, rot: -0.3f, ox: 10f, oy: 22f, aux: -0.1f)
+            .Key(LayerClawFront, 56f, rot: 0.8f, ox: -8f, oy: -46f, aux: -0.1f, ease: EaseMode.EaseOut)
+            .Key(LayerClawFront, 60f, rot: 0.95f, ox: -6f, oy: -52f, aux: -0.12f) // замах подброса
+            .Key(LayerClawFront, FeastTossTick, rot: 1.15f, ox: -2f, oy: -56f, aux: 0.7f, ease: EaseMode.EaseIn) // щелчком раскрыл
+            .Key(LayerClawFront, 70f, rot: 0.7f, ox: -6f, oy: -30f, aux: 0.3f)
+            .Key(LayerClawFront, 90f, rot: 0.5f, ox: -6f, oy: -14f, aux: 0.3f)
+            .Key(LayerClawFront, FeastTicks, rot: 0.5f, ox: -6f, oy: -12f, aux: 0.35f)
+            .Key(LayerClawBack, 0f, rot: 0.55f, ox: -6f, oy: -15f, aux: 0.35f)
+            .Key(LayerClawBack, 26f, rot: 0.3f, ox: 4f, oy: -4f, aux: 0.2f)     // упёрлась, пока передняя тянется
+            .Key(LayerClawBack, 66f, rot: 0.6f, ox: -4f, oy: -14f, aux: 0.4f)   // тоже приподнялась ловить
+            .Key(LayerClawBack, 80f, rot: 0.45f, ox: -4f, oy: -8f, aux: 0.25f)
+            .Key(LayerClawBack, FeastTicks, rot: 0.55f, ox: -6f, oy: -15f, aux: 0.35f)
+            .Key(LayerCrown, 0f, oy: -2f)
+            .Key(LayerCrown, FeastGrabTick, rot: 0.06f, oy: 2f)
+            .Key(LayerCrown, FeastTossTick, rot: -0.08f, oy: -4f)
+            .Key(LayerCrown, FeastChompTick, rot: 0.08f, oy: 3f)
+            .Key(LayerCrown, FeastCrunchTick, rot: 0.06f, oy: 3f)
+            .Key(LayerCrown, 112f, oy: -4f, aux: 0.4f)                          // довольна и корона
+            .Key(LayerCrown, FeastTicks, oy: -2f, aux: 0.1f)
+            .Key(LayerLegs, 0f)
+            .Key(LayerLegs, 26f, oy: 3f, aux: 0.15f)                            // шире стойка: тянется вперёд
+            .Key(LayerLegs, FeastLiftStart, oy: 2f, aux: 0.1f)
+            .Key(LayerLegs, FeastChompTick, oy: 3f, aux: 0.05f)
+            .Key(LayerLegs, FeastCrunchTick, oy: 4f, aux: 0.05f)
+            .Key(LayerLegs, 112f)
+            .Key(LayerEyes, 0f, aux: 0.2f)
+            .Key(LayerEyes, 20f, aux: 0.6f)                                     // загорелись при виде лакомства
+            .Key(LayerEyes, FeastGrabTick, aux: 0.8f)
+            .Key(LayerEyes, FeastTossTick, aux: 0.5f)
+            .Key(LayerEyes, FeastChompTick, aux: 0.15f)                         // зажмурился на глотке
+            .Key(LayerEyes, FeastCrunchTick, aux: 0.3f)
+            .Key(LayerEyes, 106f, aux: 1f)                                      // блаженство
+            .Key(LayerEyes, FeastTicks, aux: 0.4f)
+            .Event(FeastGrabTick, "feast_grab")
+            .Event(FeastTossTick, "feast_toss")
+            .Event(FeastChompTick, "feast_chomp")
+            .Event(FeastChewTick, "feast_chew")
+            .Event(FeastCrunchTick, "feast_crunch");
+
         // ------------------------------------------------------------------------------------
         //  КОРОЛЕВСКИЙ ПРИКАЗ
         // ------------------------------------------------------------------------------------
@@ -860,6 +927,23 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         // Под землёй король ГРЕБЁТ: клешни попеременно (фазы 0 и 24), тело волнообразно кренится.
         // Игрок этого не видит — но метки гребков задают РИТМ пыли на поверхности.
+        // ПЛАВАНИЕ (King_crab.Swim.cs): туша идёт короной вперёд, гребут лапы, а клешни
+        // прижаты к телу назад — обтекаемо, как у Latcher. Лёгкое покачивание, чтобы не застыли
+        private static AnimClip BuildSwimGlide() => new AnimClip("swim_glide", 44f, loop: true)
+            .Key(LayerBody, 0f, oy: -2f)
+            .Key(LayerBody, 22f, rot: 0.02f, oy: 1f)
+            .Key(LayerBody, 44f, oy: -2f)
+            .Key(LayerClawFront, 0f, rot: -0.7f, ox: -18f, oy: 34f, aux: -0.1f)
+            .Key(LayerClawFront, 20f, rot: -0.62f, ox: -16f, oy: 30f, aux: 0f)
+            .Key(LayerClawFront, 44f, rot: -0.7f, ox: -18f, oy: 34f, aux: -0.1f)
+            .Key(LayerClawBack, 4f, rot: -0.72f, ox: -18f, oy: 36f, aux: -0.1f)
+            .Key(LayerClawBack, 26f, rot: -0.64f, ox: -16f, oy: 31f, aux: 0f)
+            .Key(LayerClawBack, 44f, rot: -0.72f, ox: -18f, oy: 36f, aux: -0.1f)
+            .Key(LayerCrown, 0f)
+            .Key(LayerCrown, 22f, rot: -0.04f, oy: 1f)
+            .Key(LayerCrown, 44f)
+            .Key(LayerEyes, 0f, aux: 0.3f);
+
         private static AnimClip BuildBurrowSwim() => new AnimClip("burrow_swim", BurrowSwimClipTicks, loop: true)
             .Key(LayerClawFront, 0f, rot: -0.55f, ox: 12f, oy: 26f, aux: -0.1f)
             .Key(LayerClawFront, 12f, rot: -0.8f, ox: -14f, oy: 32f, aux: -0.25f)
@@ -986,6 +1070,45 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             .Key(LayerCrown, 0f)
             .Key(LayerCrown, 16f, rot: 0.22f, ox: 7f, oy: 5f)
             .Key(LayerCrown, 30f, rot: 0.23f, ox: 8f, oy: 5f)
+            .Event(14f, "sulk_sigh");
+
+        // ОГЛУШЕНИЕ (King_crab.Stagger.cs): туша плюхается, клешни падают на песок раскрытыми,
+        // корона съезжает набок; дальше — ватное покачивание, пока король не очнётся.
+        // Длина = самое долгое оглушение; короткое просто обрывается кроссфейдом в стойку
+        private static AnimClip BuildStagger() => new AnimClip("stagger", StaggerTicksFullHealth, loop: false)
+            .Key(LayerBody, 0f)
+            .Key(LayerBody, 4f, rot: 0.10f, oy: 10f, aux: 0.35f, ease: EaseMode.EaseIn)   // плюх
+            .Key(LayerBody, 10f, rot: 0.16f, oy: 14f, aux: 0.24f)
+            .Key(LayerBody, 30f, rot: 0.12f, ox: -4f, oy: 13f, aux: 0.2f)                 // ватное покачивание
+            .Key(LayerBody, 52f, rot: 0.17f, ox: 4f, oy: 15f, aux: 0.24f)
+            .Key(LayerBody, 74f, rot: 0.12f, ox: -4f, oy: 13f, aux: 0.2f)
+            .Key(LayerBody, 96f, rot: 0.17f, ox: 4f, oy: 15f, aux: 0.24f)
+            .Key(LayerBody, 116f, rot: 0.13f, ox: -2f, oy: 13f, aux: 0.2f)
+            .Key(LayerBody, StaggerTicksFullHealth, rot: 0.08f, oy: 8f, aux: 0.12f)        // начинает подниматься
+            .Key(LayerClawFront, 0f)
+            .Key(LayerClawFront, 5f, rot: -0.9f, ox: 6f, oy: 46f, aux: 0.5f, ease: EaseMode.EaseIn) // клешня в песок
+            .Key(LayerClawFront, 9f, rot: -0.82f, ox: 5f, oy: 42f, aux: 0.42f)          // отскок
+            .Key(LayerClawFront, 40f, rot: -0.88f, ox: 4f, oy: 46f, aux: 0.5f)
+            .Key(LayerClawFront, 80f, rot: -0.84f, ox: 4f, oy: 44f, aux: 0.4f)
+            .Key(LayerClawFront, StaggerTicksFullHealth, rot: -0.6f, ox: 2f, oy: 32f, aux: 0.3f)
+            .Key(LayerClawBack, 0f)
+            .Key(LayerClawBack, 8f, rot: -0.9f, ox: 6f, oy: 46f, aux: 0.5f, ease: EaseMode.EaseIn)
+            .Key(LayerClawBack, 12f, rot: -0.82f, ox: 5f, oy: 42f, aux: 0.42f)
+            .Key(LayerClawBack, 46f, rot: -0.87f, ox: 4f, oy: 45f, aux: 0.48f)
+            .Key(LayerClawBack, 88f, rot: -0.85f, ox: 4f, oy: 44f, aux: 0.42f)
+            .Key(LayerClawBack, StaggerTicksFullHealth, rot: -0.62f, ox: 2f, oy: 33f, aux: 0.3f)
+            .Key(LayerCrown, 0f)
+            .Key(LayerCrown, 6f, rot: 0.28f, ox: 8f, oy: 6f)                              // корона съехала
+            .Key(LayerCrown, 40f, rot: 0.22f, ox: 7f, oy: 5f)
+            .Key(LayerCrown, 70f, rot: 0.30f, ox: 8f, oy: 6f)
+            .Key(LayerCrown, 100f, rot: 0.24f, ox: 7f, oy: 5f)
+            .Key(LayerCrown, StaggerTicksFullHealth, rot: 0.15f, ox: 4f, oy: 3f)
+            .Key(LayerLegs, 0f)
+            .Key(LayerLegs, 5f, oy: 6f, aux: 0.25f)                                       // лапы разъехались
+            .Key(LayerLegs, StaggerTicksFullHealth, oy: 4f, aux: 0.15f)
+            .Key(LayerEyes, 0f)
+            .Key(LayerEyes, StaggerTicksFullHealth)
+            .Event(2f, "stagger_start")
             .Event(14f, "sulk_sigh");
 
         // «Забота о короне» — 40 тиков = CrownCareTicks (было 25, и 15 тиков поза стояла).

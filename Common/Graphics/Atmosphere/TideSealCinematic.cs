@@ -6,7 +6,7 @@ using Terraria.ModLoader;
 using SoA.Common.Graphics.Particles;
 using SoA.Common.Systems;
 using SoA.Common.Utils;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Common.Graphics.Atmosphere
 {
@@ -27,9 +27,11 @@ namespace SoA.Common.Graphics.Atmosphere
         private const float InflowMaxDistancePx = 640f;
         private const float ShakeFalloffPx = 2400f;
         private const int BurstStreaks = 50;
-        private const int BurstChips = 16;
+        private const int BurstChips = 26;
 
         public static readonly Color CrackColor = new(120, 230, 255);
+        private static readonly Color SigilColor = new(175, 115, 255);
+        private const int SigilShards = 28;
         private static readonly Color InflowColor = new(90, 190, 240);
         private static readonly Color ChipColor = new(70, 64, 92);
 
@@ -50,7 +52,7 @@ namespace SoA.Common.Graphics.Atmosphere
         }
 
         // 0..1 — ход ритуала этой ступени, -1 — ритуала нет
-        private static float RitualProgress(int step)
+        public static float RitualProgress(int step)
             => _step == step ? MathHelper.Clamp(_age / (float)TideSealSystem.RitualTicks, 0f, 1f) : -1f;
 
         // Множитель свечения трещины: в ритуале разгорается, после слома гаснет
@@ -149,6 +151,17 @@ namespace SoA.Common.Graphics.Atmosphere
             {
                 Vector2 velocity = Main.rand.NextVector2Unit() * Main.rand.NextFloat(6f, 14f);
                 SoAParticles.SpawnStreak(center, velocity, CrackColor, 2f, 0f, Main.rand.Next(20, 40));
+            }
+
+            // Треск: рисунок печати разлетается кольцом фиолетовых осколков, сам замок исчезает
+            // (его тайлы снимает TideSealSystem в тот же тик)
+            SoundEngine.PlaySound(SoundID.Shatter with { Pitch = -0.3f, Volume = 1.1f }, center);
+            SoundEngine.PlaySound(SoundID.Item27 with { Pitch = -0.6f }, center);
+            for (int i = 0; i < SigilShards; i++)
+            {
+                Vector2 dir = (MathHelper.TwoPi * i / SigilShards + Main.rand.NextFloat(-0.08f, 0.08f)).ToRotationVector2();
+                SoAParticles.SpawnStreak(center + dir * 20f, dir * Main.rand.NextFloat(4f, 9f), SigilColor, 1.8f, 0f,
+                    Main.rand.Next(18, 32));
             }
 
             for (int i = 0; i < BurstChips; i++)

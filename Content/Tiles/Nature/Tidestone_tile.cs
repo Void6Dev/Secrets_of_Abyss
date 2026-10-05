@@ -2,7 +2,7 @@ using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Microsoft.Xna.Framework;
-using SoA.Content.Items.Placebles;
+using SoA.Content.Items.Placeables;
 
 namespace SoA.Content.Tiles.Nature
 {

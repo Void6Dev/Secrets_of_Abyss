@@ -62,6 +62,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             UpdateLiveliness();
             RecordAfterimage();
             UpdateDeathScene();
+            UpdateFeast();
+            UpdateStaggerFx();
         }
 
         public override bool PreDraw(SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor)
@@ -91,11 +93,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             // затемнять картинку в бою нечем.
             DrawCracks(spriteBatch);
 
+            // Зоны удара — непрозрачной рамкой поверх фона, а не аддитивом: видны и днём
+            SoAVfx.BeginAlphaImmediate(spriteBatch);
+            DrawDangerZones(spriteBatch);
+            SoAVfx.EndAdditive(spriteBatch);
+
             SoAVfx.BeginAdditive(spriteBatch);
-            DrawLandingMarker(spriteBatch);
-            DrawSlamTelegraph(spriteBatch);
-            DrawSweepTelegraph(spriteBatch);
-            DrawTideGapLight(spriteBatch);
             DrawGripGlow(spriteBatch);
             DrawCrownGroundLight(spriteBatch);
             SoAVfx.EndAdditive(spriteBatch);
@@ -135,13 +138,18 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             // Под толщей грунта самого короля не видно — на поверхности остаются только пыль,
             // бугор и слетевшая корона (их рисуют блоки выше и DrawCrown ниже)
-            // В сцене смерти ноги и клешни гаснут, пока панцирь осыпается песком
-            Color partColor = drawColor * DeathPartOpacity();
+            // В сцене смерти всё сгорает в песок раскалённой кромкой (King_crab.DeathFx.cs):
+            // панцирь — сверху вниз, ноги и клешни крошатся. Прозрачность им больше не нужна
+            Color partColor = Dissolving ? drawColor : drawColor * DeathPartOpacity();
 
             if (!BurrowBuried)
             {
+                BeginDissolve(spriteBatch, DissolvePartProgress, crumble: true);
                 DrawLegs(spriteBatch, screenPos, partColor);
+                EndDissolve(spriteBatch);
+                BeginDissolve(spriteBatch, DeathWipe(), crumble: false);
                 DrawBody(spriteBatch, screenPos, drawColor); // тело рисуем сами — ради squash & stretch
+                EndDissolve(spriteBatch);
                 DrawEyesGlow(spriteBatch); // свечение глаз на морде, под короной и клешнями
 
                 if (State == CrabState.Dying)
@@ -156,8 +164,11 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             if (!BurrowBuried)
             {
+                BeginDissolve(spriteBatch, DissolvePartProgress, crumble: true);
                 DrawClawBack(spriteBatch, screenPos, partColor);  // обе клешни перед панцирем; задняя — под передней
                 DrawClawFront(spriteBatch, screenPos, partColor);
+                EndDissolve(spriteBatch);
+                DrawPearlFlight(spriteBatch, screenPos, drawColor); // подброшенная жемчужина — поверх клешней
             }
 
             if (!BurrowBuried && DeathWipe() <= 0f)
@@ -218,7 +229,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             bool stateAir = (State == CrabState.JumpCrush && SubState >= 1f)
                          || (State == CrabState.Burrow && SubState >= BurrowSubSink) // с провала лапы уже не на грунте
                          || ((State == CrabState.KnightCourt || State == CrabState.CourtDuel) && SubState >= CourtSubSink)
-                         || (State == CrabState.Intro && SubState == IntroSubErupt);
+                         || (State == CrabState.Intro && SubState == IntroSubErupt)
+                         || _swimming; // в воде лапы не стоят, а гребут
             bool groundedNow = NPC.velocity.Y == 0f || NPC.collideY;
             if (!groundedNow || stateAir)
                 _airborneTicks++;
@@ -261,12 +273,16 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
                     if (airborne)
                     {
-                        // Лапки свисают, отстают по ходу движения (инерция) и слегка покачиваются
+                        // В воздухе лапы разведены веером и поджаты (колено над бедром), отстают
+                        // по ходу движения и слегка покачиваются. Раньше свисали отвесно — спичками
                         float sway = (float)Math.Sin(Main.GameUpdateCount * 0.15f + i * 1.3f) * 4f * scale;
                         Vector2 hang = leg.Hip + new Vector2(
-                            sign * 14f * scale - NPC.velocity.X * 1.6f + sway,
-                            (42f + i * 3f) * scale);
-                        leg.Foot = Vector2.Lerp(leg.Foot, hang, 0.2f);
+                            sign * (34f + 9f * i) * scale - NPC.velocity.X * 1.6f + sway,
+                            (10f + 5f * i) * scale);
+                        // Плывёт — лапы гребут, как у Latcher (King_crab.Swim.cs)
+                        if (_swimming)
+                            hang = leg.Hip + SwimLegStroke(i, sign, scale);
+                        leg.Foot = Vector2.Lerp(leg.Foot, hang, _swimming ? 0.45f : 0.2f); // толчок в воде — резкий
                         leg.StepTimer = 0;
                         continue;
                     }
@@ -430,7 +446,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return;
 
             BodySpriteTransform(out Vector2 drawCenter, out float rotation, out Vector2 scale);
-            DrawBodySprite(drawCenter, rotation, scale, drawColor, screenPos, DeathWipe());
+            // Под шейдером рассыпания срез не нужен: кромку рисует он сам
+            DrawBodySprite(drawCenter, rotation, scale, drawColor, screenPos, _dissolveActive ? 0f : DeathWipe());
         }
 
         // Где и как рисуется панцирь — общее для отрисовки и для осыпания в песок (Cinematics)
@@ -530,16 +547,24 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
                 Vector2 kneeA = hip + new Vector2(l1, 0f).RotatedBy(baseAngle + offset);
                 Vector2 kneeB = hip + new Vector2(l1, 0f).RotatedBy(baseAngle - offset);
-                Vector2 knee = kneeA.Y < kneeB.Y ? kneeA : kneeB; // колено гнём вверх (крабья стойка)
+                // Колено гнём вверх (крабья стойка) — в осях ТУШИ, а не экрана: стоя это одно и
+                // то же, а плывущий на боку король иначе выворачивал колени не в ту сторону
+                float bodyRot = AnimatedBodyRotation();
+                bool aUp = (kneeA - hip).RotatedBy(-bodyRot).Y < (kneeB - hip).RotatedBy(-bodyRot).Y;
+                Vector2 knee = aUp ? kneeA : kneeB;
 
                 float upperRot = (knee - hip).ToRotation();
                 float lowerRot = (foot - knee).ToRotation();
 
-                // Сегмент смотрит вправо; если повёрнут влево — переворачиваем, чтобы «верх» ноги остался сверху
-                SpriteEffects upperFx = Math.Cos(upperRot) < 0f ? SpriteEffects.FlipVertically : SpriteEffects.None;
-                SpriteEffects lowerFx = Math.Cos(lowerRot) < 0f ? SpriteEffects.FlipVertically : SpriteEffects.None;
+                // Сегмент смотрит вправо; если повёрнут влево (в осях туши) — переворачиваем,
+                // чтобы «верх» ноги остался сверху. По экранным осям лапы лежащей на боку туши
+                // показывали наружу нижнюю сторону — выглядели вывернутыми
+                SpriteEffects upperFx = Math.Cos(upperRot - bodyRot) < 0f ? SpriteEffects.FlipVertically : SpriteEffects.None;
+                SpriteEffects lowerFx = Math.Cos(lowerRot - bodyRot) < 0f ? SpriteEffects.FlipVertically : SpriteEffects.None;
 
+                PrepareDissolve(upper);
                 spriteBatch.Draw(upper, hip - screenPos, null, drawColor, upperRot, UpperPivot, scale, upperFx, 0f);
+                PrepareDissolve(lower);
                 spriteBatch.Draw(lower, knee - screenPos, null, drawColor, lowerRot, LowerPivot, scale, lowerFx, 0f);
             }
         }

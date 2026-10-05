@@ -4,7 +4,7 @@ using Terraria.GameContent.ItemDropRules;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Content.Items.Materials;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Content.NPCs.Enemies
 {

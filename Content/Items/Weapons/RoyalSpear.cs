@@ -7,7 +7,7 @@ using Terraria.ModLoader;
 using SoA.Common.Players;
 using SoA.Content.Projectiles;
 using SoA.Content.Items.Materials;
-using SoA.Content.Items.Placebles;
+using SoA.Content.Items.Placeables;
 
 namespace SoA.Content.Items.Weapons
 {

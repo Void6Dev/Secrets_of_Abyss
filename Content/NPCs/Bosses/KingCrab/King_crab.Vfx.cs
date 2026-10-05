@@ -152,7 +152,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         }
 
         // Тип пылинки по грунту: песок шага должен быть песком, а снег — снегом
-        private static int GroundDustType(Vector2 worldPos) => GroundTileType(worldPos) switch
+        internal static int GroundDustType(Vector2 worldPos) => GroundTileType(worldPos) switch
         {
             TileID.Pearlsand => DustID.Pearlsand,
             // Порченый и багровый песок отдельной пылинки не имеют — берём песок,
@@ -164,7 +164,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         };
 
         // Цвет пыли по типу грунта в точке: песок/снег/земля/камень и т.д.
-        private static Vector3 GetGroundTint(Vector2 worldPos)
+        internal static Vector3 GetGroundTint(Vector2 worldPos)
         {
             switch (GroundTileType(worldPos))
             {
@@ -220,6 +220,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 shader.UseOpacity(0.85f);
                 shader.UseColor(b.Color); // uColor ставится в Apply из внутреннего поля
                 shader.Shader.Parameters["uProgress"]?.SetValue(b.Age / b.Duration);
+                shader.Shader.Parameters["uSizePx"]?.SetValue(new Vector2(b.Width, b.Height)); // пиксели облака 2x2
                 shader.Apply();
                 Main.EntitySpriteDraw(noise, b.Base - Main.screenPosition, null, Color.White, 0f,
                     origin, new Vector2(b.Width / noise.Width, b.Height / noise.Height), SpriteEffects.None, 0);
@@ -527,10 +528,27 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         //  ТЕНИ И ТЕЛЕГРАФЫ НА ГРУНТЕ
         // ==================================================================================
 
-        // Метка зоны приземления — САМЫЙ ОПАСНЫЙ момент боя был вообще не размечен.
-        // Точку считаем баллистикой от текущей скорости, а не «под крабом».
-        // Отметка СВЕТЯЩАЯСЯ, а не тень: затемнять картинку в бою нельзя.
-        private void DrawLandingMarker(SpriteBatch sb)
+        // ЗОНЫ УДАРА (SoA:DangerZone). Раньше телеграфы были мягкими аддитивными пятнами:
+        // на дневном небе и светлом песке аддитив почти не виден, и предупреждение терялось.
+        // Теперь каждая опасная атака размечает ровно ту область, куда придёт удар, рамкой,
+        // полосами и заливкой-таймером: зона залилась доверху — удар сейчас.
+        // Рисовать внутри BeginAlphaImmediate/EndAdditive.
+        private void DrawDangerZones(SpriteBatch sb)
+        {
+            DrawLandingZone(sb);
+            DrawSlamZone(sb);
+            DrawSweepZone(sb);
+            DrawGripZone(sb);
+            DrawClapZones(sb);
+            DrawBurrowExitZone(sb);
+            DrawTideGapZone(sb);
+        }
+
+        private const float ZoneGroundProbe = 400f;
+
+        // Приземление — самый опасный момент боя. Точку считаем баллистикой от текущей
+        // скорости, а не «под крабом»; зона наполняется по мере снижения
+        private void DrawLandingZone(SpriteBatch sb)
         {
             bool jumping = (State == CrabState.JumpCrush && SubState == 1f)
                         || (State == CrabState.OceanRage && SubState == RageSubFlank)
@@ -553,17 +571,26 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (float.IsNaN(groundAtLand))
                 groundAtLand = ground;
 
-            // Чем ближе к земле, тем ярче и меньше пятно
             float closeness = 1f - MathHelper.Clamp(h / 600f, 0f, 1f);
-            Color c = new Color(255, 90, 50) * (0.2f + 0.45f * closeness);
-            c.A = 0;
-            SoAVfx.DrawTintedQuad(sb, new Vector2(landX, groundAtLand + 2f),
-                new Vector2(NPC.width * (1.3f - 0.4f * closeness), 54f), 0f, c);
+            SoAVfx.DrawDangerZone(sb, new Vector2(landX, groundAtLand), new Vector2(NPC.width * 0.95f, 90f),
+                0.2f + 0.8f * closeness);
         }
 
-        // Линия рывка: лучший телеграф из всех — игрок видит зону ещё до старта.
-        // Разгорается к концу взвода.
-        private void DrawSweepTelegraph(SpriteBatch sb)
+        // Слэм: точка удара клешнёй, откуда в обе стороны побегут разломы
+        private void DrawSlamZone(SpriteBatch sb)
+        {
+            if (State != CrabState.ClawSlam || SubState != 0f)
+                return;
+
+            Vector2 impact = SlamImpactPoint();
+            float ground = FindGroundY(impact.X, impact.Y - 30f, ZoneGroundProbe, true);
+            if (float.IsNaN(ground))
+                return;
+            SoAVfx.DrawDangerZone(sb, new Vector2(impact.X, ground), new Vector2(190f, 70f), 1f - Timer / ClawWindupTicks);
+        }
+
+        // Рывок и таран: вся полоса, которую туша проедет
+        private void DrawSweepZone(SpriteBatch sb)
         {
             bool coiling = State == CrabState.ClawSweep && SubState == 0f;
             bool ramming = State == CrabState.OceanRage && SubState == RageSubCharge;
@@ -571,59 +598,76 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return;
 
             float total = coiling ? ClawSweepWindupTicks : RageChargeWindupTicks;
-            float progress = MathHelper.Clamp(1f - Timer / total, 0f, 1f);
-            float reach = (coiling ? SweepDashSpeed * ClawSweepDashTicks : RageRamSpeed * RageRamTicks) * 0.6f;
-
-            float ground = FindGroundY(NPC.Center.X, NPC.Bottom.Y - 20f, 300f, true);
-            if (float.IsNaN(ground))
-                return;
-
-            int dir = NPC.spriteDirection;
-            Vector2 center = new Vector2(NPC.Center.X + dir * reach * 0.5f, ground - 6f);
-            Color c = new Color(255, 120, 60) * (progress * progress * 0.55f);
-            c.A = 0;
-            SoAVfx.DrawTintedQuad(sb, center, new Vector2(reach, 16f + 10f * progress), 0f, c);
+            float reach = (coiling ? SweepDashSpeed * ClawSweepDashTicks : RageRamSpeed * RageRamTicks) * 0.8f;
+            DrawLaneZone(sb, reach + NPC.width * 0.5f, 130f, 1f - Timer / total);
         }
 
-        // Растущая отметка под точкой удара слэма: игрок видит, КУДА придёт клешня
-        private void DrawSlamTelegraph(SpriteBatch sb)
+        // Захлоп: выпад вперёд и пинцер, щёлкающий на его конце
+        private void DrawGripZone(SpriteBatch sb)
         {
-            if (State != CrabState.ClawSlam || SubState != 0f)
+            if (State != CrabState.CrushingGrip || SubState != 0f)
                 return;
-
-            float progress = MathHelper.Clamp(1f - Timer / ClawWindupTicks, 0f, 1f);
-            Vector2 impact = SlamImpactPoint();
-            float ground = FindGroundY(impact.X, impact.Y - 30f, 300f, true);
-            if (float.IsNaN(ground))
-                return;
-
-            Color c = new Color(255, 100, 55) * (0.5f * progress);
-            c.A = 0;
-            SoAVfx.DrawTintedQuad(sb, new Vector2(impact.X, ground + 2f),
-                new Vector2(170f * progress, 40f * progress), 0f, c);
+            DrawLaneZone(sb, GripLungeSpeed * GripLungeTicks + 150f, 120f, 1f - Timer / GripWindupTicks);
         }
 
-        // Подсветка бреши в приливной стене: единственный проход обязан читаться ЗАРАНЕЕ
-        private void DrawTideGapLight(SpriteBatch sb)
+        // Полоса от центра туши по направлению взгляда
+        private void DrawLaneZone(SpriteBatch sb, float length, float height, float progress)
+        {
+            float ground = FindGroundY(NPC.Center.X, NPC.Bottom.Y - 20f, ZoneGroundProbe, true);
+            if (float.IsNaN(ground))
+                return;
+            float centerX = NPC.Center.X + NPC.spriteDirection * length * 0.5f;
+            SoAVfx.DrawDangerZone(sb, new Vector2(centerX, ground), new Vector2(length, height), progress);
+        }
+
+        // Хлопок: два вала уходят от туши в обе стороны — размечаем их старт
+        private void DrawClapZones(SpriteBatch sb)
+        {
+            if (State != CrabState.TsunamiClap || SubState != 0f)
+                return;
+
+            float progress = (TsunamiWindupTicks - Timer) / 47f; // клап на 47-м тике замаха
+            float ground = FindGroundY(NPC.Center.X, NPC.Bottom.Y - 20f, ZoneGroundProbe, true);
+            if (float.IsNaN(ground))
+                return;
+            const float length = 260f;
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float x = NPC.Center.X + side * (NPC.width * 0.5f + length * 0.5f);
+                SoAVfx.DrawDangerZone(sb, new Vector2(x, ground), new Vector2(length, 64f), progress);
+            }
+        }
+
+        // Выход из-под земли: бугор уже есть, но зона показывает всю ширину туши
+        private void DrawBurrowExitZone(SpriteBatch sb)
+        {
+            if (State != CrabState.Burrow || SubState != BurrowSubWarn)
+                return;
+            float ground = SurfaceAbove(StateData, NPC.Center.Y);
+            SoAVfx.DrawDangerZone(sb, new Vector2(StateData, ground), new Vector2(NPC.width, NPC.height * 0.9f),
+                1f - Timer / BurrowWarnTicks);
+        }
+
+        // Брешь в приливной стене — единственный проход, размечен безопасной зоной заранее
+        private void DrawTideGapZone(SpriteBatch sb)
         {
             if (State != CrabState.TideCall)
                 return;
 
             float elapsed = TideTelegraphTicks - Timer;
-            if (elapsed < 30f)
+            if (elapsed < 20f)
                 return;
 
-            float progress = MathHelper.Clamp((elapsed - 30f) / 20f, 0f, 1f);
-            float baseY = NPC.Bottom.Y;
-            float gapY = baseY - (TideGapIndex() + 0.5f) * TideWallSpacing;
+            float progress = MathHelper.Clamp((elapsed - 20f) / 20f, 0f, 1f);
+            int gapWidth = Desperate ? 1 : 2;
+            // Валы стоят центрами на baseY - i * шаг: низ бреши — на полшага ниже центра нижнего пропущенного
+            float gapBottom = NPC.Bottom.Y - (TideGapIndex() - 0.5f) * TideWallSpacing;
             int dir = Math.Sign(NPC.Center.X - Main.player[NPC.target].Center.X);
             if (dir == 0)
                 dir = -NPC.spriteDirection;
 
-            Color c = new Color(120, 220, 255) * (progress * 0.6f);
-            c.A = 0;
-            SoAVfx.DrawTintedQuad(sb, new Vector2(NPC.Center.X - dir * TideWallStartDist * 0.5f, gapY),
-                new Vector2(TideWallStartDist, TideWallSpacing * 0.8f), 0f, c);
+            SoAVfx.DrawDangerZone(sb, new Vector2(NPC.Center.X - dir * TideWallStartDist * 0.5f, gapBottom),
+                new Vector2(TideWallStartDist, TideWallSpacing * gapWidth), progress, 0.9f, safe: true);
         }
 
         // Внутренняя подсветка пинцера на изготовке захлопа: распахнутый пинцер — хороший
@@ -876,6 +920,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Rectangle src = new Rectangle(0, NPC.frame.Y + cut, tex.Width, frameHeight - cut);
             Vector2 origin = new Vector2(tex.Width / 2f, frameHeight / 2f - cut);
             SpriteEffects fx = NPC.spriteDirection == 1 ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+            PrepareDissolve(tex);
             Main.EntitySpriteDraw(tex, worldCenter - screenPos, src, color, rotation, origin, scale, fx, 0);
         }
     }

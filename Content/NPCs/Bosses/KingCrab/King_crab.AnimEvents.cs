@@ -59,6 +59,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case "roar_peak": HitStop(4); break;
                 case "roar_release": OnRoarRelease(); break;
 
+                // ---------- Лакомство ----------
+                case "feast_grab": OnFeastGrab(); break;
+                case "feast_toss": OnFeastToss(); break;
+                case "feast_chomp": OnFeastChomp(); break;
+                case "feast_chew": OnFeastChew(); break;
+                case "feast_crunch": OnFeastCrunch(); break;
+
                 // ---------- Королевский приказ ----------
                 case "crown_touch": OnCrownTouch(); break;
                 case "crown_point": OnCrownPoint(); break;
@@ -74,6 +81,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
                 // ---------- Настроение ----------
                 case "sulk_sigh": OnSulkSigh(); break;
+                case "stagger_start": OnStaggerStart(); break;
                 case "rage_slam": OnRageSlam(); break;
                 case "rage_squeeze": OnRageSqueeze(); break;
 

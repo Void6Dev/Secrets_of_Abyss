@@ -40,12 +40,16 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             Phase2Transition, // кат-сцена смены фазы: бой на паузе, король неуязвим
             CourtDuel,        // свита фазы 2: король уходит под песок и в бою не участвует
             Intro,            // появление: идёт под песком, из грунта встаёт корона, выход и рёв (King_crab.Cinematics.cs)
+            Stagger,          // промахнулся тяжёлой атакой: стоит оглушённый, бить его — самое время
         }
 
         // ---------- СТАТЫ ----------
-        private const int LifeMax = 4200;
-        private const int Defense = 16;
-        private const int DefensePhase2 = 10;      // в фазе 2 защита ниже (реф)
+        // Этап — после Пожирателя/Мозга: Скелетрон 4400 HP при защите 10, Королева пчёл 3400 при 8.
+        // У короля сверх того длинные отрезки неуязвимости (подкоп, гвардия, свита),
+        // поэтому здоровье и защита ниже, а урон добирается в окнах наказания (Stagger, ShellCrack)
+        private const int LifeMax = 3600;
+        private const int Defense = 12;
+        private const int DefensePhase2 = 8;       // в фазе 2 защита ниже (реф)
         private const int ContactDamage = 26;
         private const int JumpContactDamage = 34;  // на приземлении бьёт сильнее
         private const int ClawSweepContactDamage = 30;
@@ -123,11 +127,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const int CourtDuelMaxTicks = 5400;    // предохранитель: 90 секунд под песком
         private const float CourtDuelDepth = 360f;     // глубже обычного подкопа: короля не должно быть видно
         private const int CrownCommandCooldownTicks = 1500; // 25 с между созывами
-        private const int KnightCourtMaxTicks = 900;        // предохранитель: не сидим под песком вечно
+        private const int KnightCourtMaxTicks = 600;        // предохранитель: не дольше 10 с неуязвимости
 
         private const int BurrowDigTicks = 24;         // закапывание перед «королевской гвардией»
         private const int BurrowMaxAir = 120;          // предохранитель на вылет
-        private const float BurrowEmergeSpeed = 17f;
         private const float BurrowDepth = 220f;        // насколько глубоко уходит под грунт
 
         // ---------- ПОДКОП: СТАДИИ ----------
@@ -158,7 +161,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float BurrowTravelTurn = 0.12f;  // инерция подземного хода (0..1)
         private const float BurrowExitTolerance = 45f; // насколько точно подходит под игрока
         private const float BurrowWarnDepth = 120f;    // на сколько подходит к поверхности в телеграфе
-        private const float BurrowEruptSpeed = 20f;    // сила выпрыгивания
+        // Высота вылета — по игроку, а не фиксированная: раньше король всегда взлетал на ~740 px.
+        // Сначала он обязан целиком выбраться из толщи, дальше поднимается над грунтом
+        // ровно на высоту игрока плюс запас — стоишь на земле, и подскок невысокий
+        private const float EruptGravityShare = 0.6f;  // гравитация на вылете — доля от Gravity
+        private const float EruptMinClearance = 50f;   // подъём низа туши над грунтом, если игрок внизу
+        private const float EruptClearanceMargin = 60f; // запас над ногами игрока
+        private const float EruptMaxClearance = 460f;
 
         // ---------- ПОДКОП: ЭФФЕКТЫ ----------
         private const float BurrowRumbleMin = 1.2f;    // тряска в начале подземного хода
@@ -190,7 +199,13 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const int SulkTicks = 30;              // «недовольство» после промаха
         private const int CrownCareTicks = 40;         // задняя клешня придерживает корону
         private const int RageTicks = 26;              // ярость от крупного урона
-        private const int ShellCrackTicks = 90;        // окно 1.5x урона после тяжёлой атаки
+        private const int ShellCrackTicks = 120;       // окно 1.5x урона после тяжёлой атаки
+
+        // Оглушение после промаха тяжёлой атакой: стоит, не бьёт контактом, ловит 1.5x урона.
+        // Короче к концу боя, но никогда не меньше полутора секунд — окно должно читаться
+        private const int StaggerTicksFullHealth = 130;
+        private const int StaggerTicksNearDeath = 85;
+        private const int StaggerHitCut = 20;          // волна всё-таки достала игрока — оглушение обрывается
 
         private const int CrownCareDamage = 45;        // с какого урона придерживает корону
         private const int RageDamage = 90;             // с какого урона впадает в ярость
@@ -243,7 +258,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // В этот момент нельзя входить ни в ярость, ни в кат-сцену смены фазы: обе возвращают
         // столкновения с тайлами, а вернуть их туше, сидящей в толще грунта, — значит замуровать
         // её там. Оба решения принимает сервер, поэтому серверного noTileCollide достаточно
-        private bool PassingThroughTiles => NPC.noTileCollide;
+        private bool PassingThroughTiles => NPC.noTileCollide && !_swimming; // в воде блоки насквозь, но это не «под землёй»
 
         // ТОЛЬКО ДЛЯ ОТРИСОВКИ. Ваниль рисует NPC поверх тайлов, поэтому на стадии провала
         // голова и клешни просвечивали сквозь грунт: туша уже под землёй, а видна целиком.
@@ -367,6 +382,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             UpdateMoodTimers();
             UpdateStats();
+            UpdateSwimming(); // King_crab.Swim.cs
 
             Player target = Main.player[NPC.target];
 
@@ -400,6 +416,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case CrabState.Phase2Transition: AIPhase2Transition(target); break;
                 case CrabState.CourtDuel: AICourtDuel(target); break;
                 case CrabState.Intro: AIIntro(target); break;
+                case CrabState.Stagger: AIStagger(); break;
             }
 
             // Ступенька по ходу — шагом вверх. Раньше и один блок останавливал рывок
@@ -445,6 +462,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 // Единственный урон состояния — бросок (см. RageThrowDamage), а толчок при
                 // касании считает RageContactCheck: ваниль пропускает NPC с damage <= 0
                 CrabState.OceanRage => 0,
+                CrabState.Stagger => 0, // оглушённый не наказывает за то, что к нему подошли
                 _ => ContactDamage,
             };
 
@@ -481,9 +499,16 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         private void AIScuttle(Player target)
         {
-            TryDropToTarget(target); // игрок ниже — спускаемся, а не топчемся сверху
-            ApplyGravity();
-            WalkToward(target.Center.X, MaxWalkSpeed());
+            if (_swimming)
+            {
+                SwimToward(target);
+            }
+            else
+            {
+                TryDropToTarget(target); // игрок ниже — спускаемся, а не топчемся сверху
+                ApplyGravity();
+                WalkToward(target.Center.X, MaxWalkSpeed());
+            }
             FaceTarget(target);
 
             if (Timer > 0f)
@@ -574,8 +599,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             return count;
         }
 
-        // Условия атак: дистанция до цели и то, что атаке нужно для смысла
-        private bool AttackReady(CrabState attack, float dist) => attack switch
+        // Условия атак: дистанция до цели и то, что атаке нужно для смысла.
+        // В воде — только то, что там имеет смысл (King_crab.Swim.cs)
+        private bool AttackReady(CrabState attack, float dist)
+            => (!_swimming || IsSwimAttack(attack)) && AttackReadyByDistance(attack, dist);
+
+        private bool AttackReadyByDistance(CrabState attack, float dist) => attack switch
         {
             CrabState.ClawSlam => dist < MeleeRange,
             CrabState.ClawSweep => dist < SweepRange,
@@ -602,9 +631,20 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         };
 
         // Возврат в стойку: промах отзывается «недовольством» (реф).
-        // На низком здоровье вместо паузы — короткий вдох и продолжение связки
+        // На низком здоровье вместо паузы — короткий вдох и продолжение связки.
+        // Промах ТЯЖЁЛОЙ атакой — оглушение вместо связки: это и есть окно наказания
         private void ReturnToScuttle(bool heavyAttack = false)
         {
+            if (heavyAttack && !_attackConnected)
+            {
+                _queuedCombo = CrabState.Scuttle;
+                _comboLength = 0;
+                int stagger = StaggerDuration();
+                _vulnerableTimer = Math.Max(_vulnerableTimer, stagger + 30); // ShellCrack на всё оглушение
+                EnterState(CrabState.Stagger, stagger);
+                return;
+            }
+
             bool combo = TryQueueCombo(State);
             if (!_attackConnected && !combo)
                 _sulkTimer = SulkTicks;
@@ -776,6 +816,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 {
                     NPC.velocity.X = NPC.spriteDirection * GripLungeSpeed * _actionTempo;
                     NPC.velocity.Y = -3f;
+                    // В воде выпад идёт прямо к игроку — хоть вверх, хоть вниз
+                    if (_swimming)
+                        NPC.velocity = (target.Center - NPC.Center).SafeNormalize(new Vector2(NPC.spriteDirection, 0f))
+                            * GripLungeSpeed * _actionTempo;
                     SoundEngine.PlaySound(SoundID.Item17 with { Pitch = -0.7f }, NPC.Center);
                     EnterSubState(1f, GripLungeTicks);
                 }
@@ -1093,6 +1137,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case BurrowSubPrep: BurrowPrep(target); break;
                 case BurrowSubSink: BurrowSink(); break;
                 case BurrowSubTravel: BurrowTravel(target); break;
+                case BurrowSubClaws: BurrowClaws(target); break;
                 case BurrowSubWarn: BurrowWarn(); break;
                 default: BurrowErupt(); break;
             }
@@ -1192,8 +1237,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (distX > BurrowExitTolerance && Timer > 0f)
                 return;
 
-            StateData = NPC.Center.X; // точка выхода зафиксирована — дальше король её держит
-            EnterSubState(BurrowSubWarn, BurrowWarnTicks);
+            // Дошёл — сначала клешни из песка (King_crab.SandClaw.cs), потом выход
+            StartClawVolley(SandClawCount);
+            EnterSubState(BurrowSubClaws, ClawVolleyTicks(SandClawCount));
         }
 
         // 4a. Телеграф: подтягивается под самую поверхность, над ним вспучивается бугор
@@ -1224,9 +1270,19 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         }
 
         // 4b. Выброс наружу: земля, камни, кольцо удара и тяжёлый удар камеры
+        // Скорость вылета: выбраться из толщи под грунтом + подняться до игрока
+        private float EruptSpeed(float surfaceY)
+        {
+            Player target = Main.player[NPC.target];
+            float depth = Math.Max(0f, NPC.Bottom.Y - surfaceY);
+            float playerAbove = Math.Max(0f, surfaceY - target.Bottom.Y);
+            float clearance = MathHelper.Clamp(playerAbove + EruptClearanceMargin, EruptMinClearance, EruptMaxClearance);
+            return (float)Math.Sqrt(2f * Gravity * EruptGravityShare * (depth + clearance));
+        }
+
         private void EruptFromGround(Vector2 surface)
         {
-            NPC.velocity = new Vector2(0f, -BurrowEruptSpeed);
+            NPC.velocity = new Vector2(0f, -EruptSpeed(surface.Y));
 
             TriggerBurrowBurst(surface, 260f, 150f, 34f);
             TriggerImpactRing(surface, 340f, 28f);
@@ -1239,7 +1295,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // 5. Полёт и приземление — дальше обычный AI
         private void BurrowErupt()
         {
-            NPC.velocity.Y += Gravity * 0.6f;
+            NPC.velocity.Y += Gravity * EruptGravityShare;
             if (NPC.velocity.Y > 0f)
                 NPC.noTileCollide = false; // на спуске снова ловим землю
 
@@ -1249,7 +1305,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 return;
 
             LandFromEruption();
-            ReturnToScuttle();
+            ReturnToScuttle(heavyAttack: true); // вынырнул мимо игрока — оглушён
         }
 
         // Падает с большей высоты, чем в прыжке, — и приземление обязано быть тяжелее
@@ -1363,6 +1419,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 if (Timer <= 0f)
                 {
                     FinishSink();
+                    ResetUndergroundClaws();
                     EnterSubState(1f, KnightCourtMaxTicks);
                 }
                 return;
@@ -1378,9 +1435,11 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 if (Timer % 12f == 0f)
                     SpawnSandBurst(new Vector2(NPC.Center.X - 40f, target.Bottom.Y - 4f), 80, 8, 4, 3f, 3f, 8f);
 
+                TickUndergroundClaws(target, KnightCourtClawPeriod, SandClawCount);
+
                 if (KnightsAlive() == 0 || Timer <= 0f)
                 {
-                    NPC.velocity = new Vector2(0f, -BurrowEmergeSpeed);
+                    NPC.velocity = new Vector2(0f, -EruptSpeed(SurfaceAbove(NPC.Center.X, target.Bottom.Y)));
                     SoundEngine.PlaySound(SoundID.Roar with { Pitch = -0.2f }, NPC.Center);
                     EnterSubState(2f, BurrowMaxAir);
                 }
@@ -1388,7 +1447,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             }
 
             // Выныривает обратно в бой
-            NPC.velocity.Y += Gravity * 0.6f;
+            NPC.velocity.Y += Gravity * EruptGravityShare;
             if (NPC.velocity.Y > 0f)
                 NPC.noTileCollide = false;
 
@@ -1514,6 +1573,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 if (Timer <= 0f)
                 {
                     FinishSink();
+                    ResetUndergroundClaws();
                     EnterSubState(1f, CourtDuelMaxTicks);
                 }
                 return;
@@ -1528,10 +1588,12 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     MathHelper.Clamp((target.Center.X - NPC.Center.X) * 0.02f, -6f, 6f),
                     MathHelper.Clamp((target.Bottom.Y + CourtDuelDepth - NPC.Center.Y) * 0.05f, -8f, 8f));
 
+                TickUndergroundClaws(target, CourtDuelClawPeriod, CourtDuelClawMax);
+
                 // Предохранитель на случай, если свита не заспавнилась вовсе
                 if (Main.netMode != NetmodeID.MultiplayerClient && (EscortsAlive() == 0 || Timer <= 0f))
                 {
-                    NPC.velocity = new Vector2(0f, -BurrowEmergeSpeed);
+                    NPC.velocity = new Vector2(0f, -EruptSpeed(SurfaceAbove(NPC.Center.X, target.Bottom.Y)));
                     SoundEngine.PlaySound(SoundID.Roar with { Pitch = -0.3f }, NPC.Center);
                     EnterSubState(2f, BurrowMaxAir);
                 }
@@ -1539,7 +1601,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             }
 
             // Возвращается в бой ударом о грунт
-            NPC.velocity.Y += Gravity * 0.6f;
+            NPC.velocity.Y += Gravity * EruptGravityShare;
             if (NPC.velocity.Y > 0f)
                 NPC.noTileCollide = false;
 
@@ -1672,9 +1734,37 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         public override void OnHitPlayer(Player target, Player.HurtInfo hurtInfo)
         {
-            _attackConnected = true; // достал — «недовольства» не будет
+            ReportAttackLanded(); // достал — ни «недовольства», ни оглушения
             // В ярости этот хук не срабатывает вовсе: контактного урона там нет,
             // а значит нет и ванильного столкновения. Толчок к воде делает RageContactCheck
+        }
+
+        // Атака короля достала игрока — тушей или снарядом. Попадание ловит клиент
+        // того игрока, а решает об оглушении сервер, поэтому в мультиплеере — пакетом
+        internal static void ReportAttackLanded()
+        {
+            if (Main.netMode == NetmodeID.MultiplayerClient)
+            {
+                ModPacket packet = ModContent.GetInstance<SoA>().GetPacket();
+                packet.Write((byte)SoAPacketType.CrabAttackLanded);
+                packet.Send();
+                return;
+            }
+
+            int index = NPC.FindFirstNPC(ModContent.NPCType<King_crab>());
+            if (index >= 0 && Main.npc[index].ModNPC is King_crab king)
+                king.OnAttackLanded();
+        }
+
+        private void OnAttackLanded()
+        {
+            _attackConnected = true;
+            // Волна достала игрока уже после того, как король «промахнулся», — оглушение обрывается
+            if (State == CrabState.Stagger && Timer > StaggerHitCut)
+            {
+                Timer = StaggerHitCut;
+                NPC.netUpdate = true;
+            }
         }
 
         public override void HitEffect(NPC.HitInfo hit)
@@ -1771,6 +1861,11 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         {
             if (DropThroughTick())
                 return;
+            if (_swimming)
+            {
+                WaterDrift(); // в воде не тонет камнем, а медленно опускается
+                return;
+            }
             if (NPC.noTileCollide)
                 return;
 
@@ -1865,6 +1960,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             writer.Write((short)_territoryWarnTimer); // клиенту нужен для пульса виньетки
             writer.Write(_homeX); // клиенту нужен, чтобы знать, в какую сторону вода
             writer.Write(_actionTempo); // Timer и клип атаки идут с этим темпом на всех машинах
+            writer.Write(_feastPearl.X); // клешне нужна чаша, к которой тянуться
+            writer.Write(_feastPearl.Y);
         }
 
         public override void ReceiveExtraAI(BinaryReader reader)
@@ -1877,6 +1974,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             _territoryWarnTimer = reader.ReadInt16();
             _homeX = reader.ReadSingle();
             _actionTempo = reader.ReadSingle();
+            _feastPearl = new Vector2(reader.ReadSingle(), reader.ReadSingle());
         }
 
         #endregion

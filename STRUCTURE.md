@@ -22,8 +22,12 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 ```
 
 Забыл оверрайд — компилятор промолчит, а в игре будет «Asset could not be found».
-Проверка путей — скриптом из истории задач (обходит все строки `"SoA/..."` и все
-текстурные классы без оверрайда).
+**После любого переноса файлов** запусти `python3 Docs/tools/check_asset_paths.py`: он
+обходит все строки `"SoA/..."` и `Assets.Request(...)` и все текстурные классы без
+оверрайда и называет каждый спрайт, которого нет там, где его ищет tML. Должно быть 0 ошибок.
+
+Перенос только `.cs` (без спрайта) безопасен и без смены пространства имён. Сохранённые
+миры переносы не ломают: tML хранит тайлы и предметы по имени класса, а не по неймспейсу.
 
 ## Где что лежит
 
@@ -34,16 +38,20 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 | `Items/Weapons` | оружие; парами код+спрайт |
 | `Items/Accessories/<Аксессуар>/` | аксессуар + его ModPlayer + слои отрисовки |
 | `Items/Consumables/` | постоянные улучшения как плод жизни (`DepthPearl` — ослабляет давление, счётчик в `TidePressurePlayer`) |
-| `Items/Ammo`, `Items/Materials`, `Items/Placebles`, `Items/Fishing`, `Items/BossSummons`, `Items/Critters`, `Items/Armor` | предметы по назначению |
+| `Items/Ammo`, `Items/Materials`, `Items/Placeables`, `Items/Fishing`, `Items/BossSummons`, `Items/Critters`, `Items/Armor` | предметы по назначению |
 | `Items/DevTools` | палочка структур, её рендерер (выделение и призрак размещения) и `icons/` |
-| `Items/oldtextures` | старый арт, в игре не используется |
 | `Projectiles/<Владелец>/` | снаряды, сгруппированные по оружию/боссу, которому принадлежат |
-| `NPCs/Bosses/KingCrab` | босс: `King_crab.*.cs` — части одного класса (Claws, Crown, Legs, Vfx, Rig) |
+| `NPCs/Bosses/KingCrab` | босс: `King_crab.*.cs` — части одного класса (Claws, Crown, Legs, Vfx, Rig; Feast — поедание жемчужины в интро, Stagger — оглушение на промахе, SandClaw — клешня из песка под землёй) |
 | `NPCs/Enemies`, `NPCs/Critters`, `NPCs/Friendly_NPCs` | остальные NPC |
-| `Tiles/Nature`, `Tiles/Ores`, `Tiles/Other` | тайлы |
+| `Tiles/Nature` | природа биома: грунт, кораллы, ракушки, приливная флора (`Tidekelp_tile` — сам тайл и запасной лист; рисует лес `Common/Graphics/Kelp`) |
+| `Tiles/Furniture` | мебель и утварь: факел, костёр, ящик |
+| `Tiles/Lighthouse` | маяк: лампа (+ её TileEntity) и цепь |
+| `Tiles/Shrines` | сюжетные тайлы: алтарь краба, святилище жемчужины, печати прилива и их барьер |
+| `Walls` | стены биома |
+| `Dusts` | пыль |
 | `Buffs` | баффы и дебаффы; `LavaExplosion/` — дебафф вместе со своим GlobalNPC |
 | `Water` | стиль воды Прилива Теней |
-| `Worldgen` | биом |
+| `Biomes` | биом Прилива Теней и его мировые данные (`TideOfShadowsWorldData`: зоны, глубина) |
 | `Sounds` | звуки |
 
 ### Common — механика и инфраструктура
@@ -51,12 +59,15 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 | Папка | Что внутри |
 |---|---|
 | `Players` | ModPlayer'ы; `RoyalSpear/` — состояние копья и полоска приливного удара |
-| `Systems` | `SoASystem` (регистрация шейдеров), `DownedBossSystem` |
+| `Systems` | `SoASystem` (регистрация шейдеров), `DownedBossSystem`, мелкие системы |
+| `Systems/Tide` | механика Прилива Теней: печати (`TideSealSystem`), течения, возмущения воды пловцами, физика стеблей водорослей (`TideKelpPhysics`) |
+| `Commands` | чат-команды; `/soa` — список всех команд мода (собирается сам из `Description`) |
 | `Systems/Worldgen` | генерация: проходы, `TideOcean/` — океан Прилива Теней |
-| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `ScreenShake` (вся тряска экрана — только через него, её выключает конфиг), `SpriteSpine` (кадр спрайта, натянутый на гнущийся позвоночник — угорь), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/`, `Atmosphere/` — атмосфера Прилива Теней (экранный фильтр воды, фоновые частицы и биолюминесцентный след, сцена снятия печати `TideSealCinematic`, поверхность воды `TideWaterFx` — всплески, капли, рябь) |
+| `Graphics` | `SoAVfx` (примитивы поверх шейдеров), `ScreenShake` (вся тряска экрана — только через него, её выключает конфиг), `SpriteSpine` (кадр спрайта, натянутый на гнущийся позвоночник — угорь), `TideGeyserFx` (гейзер), эффекты рёва и камеры, `Animation/`, `Kelp/` — подводный лес (стебли-меши по физической цепи, пиксельный рендер в цель, дальний лес вместо стен II зоны; атлас и превью — `Docs/art_refs/tidekelp`), `Atmosphere/` — атмосфера Прилива Теней (экранный фильтр воды, фоновые частицы и биолюминесцентный след, сцена снятия печати `TideSealCinematic`, поверхность воды `TideWaterFx` — всплески, капли, рябь) |
 | `UI/DevMenu`, `UI/StructureTool` | самодельный интерфейс инструментов разработки; у построек — тулбар, окна сохранения и библиотеки, интерактивное превью (`StructureViewport`) и рендер в RenderTarget |
 | `UI` (плоско) | `SoAHudDraw`, `ToolText` — общие примитивы рисования интерфейса |
-| `Utils` | `SoACombat` (проверка «промок»), `SoAEasing` (кривые плавности), структуры (`StructureData`/`StructureIO`, библиотека, выделение, размещение, история отмены), шум, фильтры |
+| `Utils` | `SoACombat` (проверка «промок»), `SoAEasing` (кривые плавности), шум |
+| `Utils/Structures` | структуры: `StructureData`/`StructureIO`, библиотека, выделение, размещение, история отмены, фильтры |
 | `Weapons` | общие основы оружия: `ClubItem` + `ClubProjectile` — тяжёлое оружие «замах → зарядка по ступеням → взмах» (Зубодробилка, Коса огненной бури); `HeldProjectiles` — удержание снаряда в руке и зеркалирование рук |
 | `Config` | `SoAClientConfig` — настройки игрока (тряска экрана), `SoADevConfig` — для разработки |
 | `CustomClasses`, `Backgrounds` | по одному файлу на назначение |
@@ -67,7 +78,8 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 |---|---|
 | `Effects` | шейдеры: `.fx` (источник), `.fxo`, `.xnb` (то, что грузит игра), `Compiler/fxc.exe` |
 | `Textures` | текстуры для шейдеров и интерфейса: `WaveNoise`, `BeamDistortion`, `TideGeyser` (лист струи), `RoyalTideBar*` |
-| `Dusts`, `Gores`, `Structures` | пыль, горы, файлы структур: `sunken_ship`, `breakwater_ruin` (руины волнолома у края мира, ждёт постройки; без файла там голый риф) |
+| `Textures/Kelp` | атлас подводного леса (+ `_Glow`, `_Haze`) — генерирует `Docs/art_refs/tidekelp/make_kelp_atlas.py` |
+| `Gores`, `Structures` | горы, файлы структур: `sunken_ship`, `breakwater_ruin` (руины волнолома у края мира, ждёт постройки; без файла там голый риф), `lighthouse` (маяк, восстановлен скриптом `Docs/tools/structures/lighthouse.py` по скриншоту) |
 
 ## Общие компоненты — не растаскивать по владельцам
 
@@ -75,9 +87,14 @@ public override string Texture => "SoA/Content/Projectiles/Aquasaw/AquasawProjec
 и босса, проверка «промок» используется четырьмя оружиями. Копия в папке оружия — прямой
 путь к дублированию логики.
 
-## Мусор, который стоит однажды разобрать
+## Docs — в мод не попадает
 
-- `Content/Projectiles/death_Breathe.png` — в коде не упоминается
-- `Content/Items/Weapons/Toothbreaker.png` — спрайт без класса
-- `Content/Items/oldtextures/` — старый арт
-- `Assets/Effects/obj/` — остатки mgcb, к сборке не нужны
+`build.txt` исключает из `.tmod` всю `Docs/`, исходники арта (`*.aseprite`), шейдеров (`*.fx`,
+`*.fxo`, компилятор) и `*.md`/`*.py`.
+
+| Папка | Что внутри |
+|---|---|
+| `art_refs/<тема>/` | референсы, генераторы спрайтов и превью (водоросли, печать, лампа маяка) |
+| `art_sources/` | исходники `.aseprite` |
+| `unused_art/` | спрайты, на которые не ссылается код (старые версии, черновики) |
+| `tools/` | скрипты: `check_asset_paths.py`, восстановление структур |

@@ -8,6 +8,7 @@ using Terraria.Graphics.Shaders;
 using Terraria.ID;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
+using SoA.Content.NPCs.Bosses.KingCrab;
 
 namespace SoA.Content.Projectiles
 {
@@ -101,6 +102,9 @@ namespace SoA.Content.Projectiles
         }
 
         // Столкновение с тайлом = «точка окончания»: не умираем сразу, а лопаемся
+        // Достал игрока — атака короля засчитана, оглушения за промах не будет
+        public override void OnHitPlayer(Player target, Player.HurtInfo info) => King_crab.ReportAttackLanded();
+
         public override bool OnTileCollide(Vector2 oldVelocity)
         {
             StartPop();

@@ -223,6 +223,62 @@ namespace SoA.Common.Graphics
                 WorldTransform);
         }
 
+        public static readonly Color DangerColor = new(255, 72, 26);
+        public static readonly Color SafeColor = new(90, 230, 255);
+
+        // Зона удара (SoA:DangerZone): прямоугольник на грунте с рамкой, бегущими полосами и
+        // заливкой-таймером. bottomCenter — точка на поверхности, progress 0..1 — доля
+        // предупреждения до удара. safe — безопасная зона (голубая, без полос и мигания).
+        // Вызывать внутри BeginAlphaImmediate/EndAdditive
+        public static void DrawDangerZone(SpriteBatch sb, Vector2 bottomCenter, Vector2 sizePx, float progress,
+            float opacity = 1f, bool safe = false)
+        {
+            if (sizePx.X < 2f || sizePx.Y < 2f || opacity <= 0f)
+                return;
+            MiscShaderData shader = GameShaders.Misc["SoA:DangerZone"];
+            shader.UseOpacity(opacity);
+            shader.UseColor(safe ? SafeColor : DangerColor);
+            shader.Shader.Parameters["uProgress"]?.SetValue(MathHelper.Clamp(progress, 0f, 1f));
+            shader.Shader.Parameters["uSizePx"]?.SetValue(sizePx);
+            shader.Shader.Parameters["uSafe"]?.SetValue(safe ? 1f : 0f);
+            shader.Apply();
+            Texture2D tex = Quad;
+            Vector2 topLeft = bottomCenter - new Vector2(sizePx.X / 2f, sizePx.Y);
+            Main.EntitySpriteDraw(tex, topLeft - Main.screenPosition, null, Color.White, 0f, Vector2.Zero,
+                sizePx / tex.Size(), SpriteEffects.None, 0);
+        }
+
+        private static readonly RasterizerState ScissorRasterizer = new()
+        {
+            CullMode = CullMode.None,
+            ScissorTestEnable = true,
+        };
+        private static Rectangle _savedScissor;
+
+        // Всё, что ниже мировой линии worldY, не рисуется. Нужен для того, что вылезает из
+        // грунта: полностью тёмные тайлы игра не рисует вовсе, и спрятать часть «под землёй»
+        // за ними не выходит — в темноте она висела бы на чёрном. Закрывать EndClipped
+        public static void BeginClippedAbove(SpriteBatch sb, float worldY)
+        {
+            sb.End();
+            GraphicsDevice device = Main.graphics.GraphicsDevice;
+            _savedScissor = device.ScissorRectangle;
+            Viewport view = device.Viewport;
+            float screenY = Vector2.Transform(new Vector2(0f, worldY) - Main.screenPosition, WorldTransform).Y;
+            int bottom = (int)MathHelper.Clamp(screenY, 0f, view.Height);
+            device.ScissorRectangle = new Rectangle(0, 0, view.Width, bottom);
+            sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, Main.DefaultSamplerState,
+                DepthStencilState.None, ScissorRasterizer, null, WorldTransform);
+        }
+
+        public static void EndClipped(SpriteBatch sb)
+        {
+            sb.End();
+            Main.graphics.GraphicsDevice.ScissorRectangle = _savedScissor;
+            sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, Main.DefaultSamplerState,
+                DepthStencilState.None, RasterizerState.CullCounterClockwise, null, WorldTransform);
+        }
+
         // Приливная аура через SoA:CrabAura (каустика расходящимися кольцами + пузыри).
         // sizePx — диаметр в мире. Вызывать внутри BeginAdditive/EndAdditive.
         // blend: 0 — холодная вода, 1 — мутный песок.

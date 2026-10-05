@@ -84,10 +84,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
         private struct DeathCrack
         {
-            public Vector2 Local;   // точка на панцире в лицевых координатах (как BodyAnchorToWorld)
-            public float Angle;
+            public Vector2[] Points; // ломаная на панцире в лицевых координатах (как BodyAnchorToWorld)
             public float Length;
             public int Delay;
+            public float Width;      // ответвления тоньше (King_crab.DeathFx.cs)
         }
 
         private readonly List<DeathCrack> _deathCracks = new();
@@ -123,8 +123,14 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (side == 0)
                 side = -1;
 
+            // Позвали с алтаря — идёт к жемчужине (King_crab.Feast.cs)
+            ClaimFeast(target);
+            if (HasFeast)
+                side = FeastSide(target, side);
+            float anchorX = HasFeast ? _feastPearl.X : target.Center.X;
+
             // Прячем тушу в толщу грунта в стороне от игрока — оттуда начинается подземный ход
-            float startX = target.Center.X + side * (IntroShort ? IntroStartDistanceShort : IntroStartDistance);
+            float startX = anchorX + side * (IntroShort ? IntroStartDistanceShort : IntroStartDistance);
             float surfaceY = SurfaceAbove(startX, target.Bottom.Y);
             NPC.Center = new Vector2(startX, surfaceY + BurrowDepth);
             NPC.velocity = Vector2.Zero;
@@ -142,6 +148,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 case IntroSubCrown: IntroCrown(); break;
                 case IntroSubErupt: IntroErupt(); break;
                 case IntroSubStand: IntroStand(target); break;
+                case IntroSubFeast: IntroFeast(); break;
                 default: IntroRoar(target); break;
             }
         }
@@ -152,7 +159,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             NPC.noTileCollide = true;
 
             int side = StateData >= 0f ? 1 : -1;
-            float goalX = target.Center.X + side * IntroStopDistance;
+            float goalX = HasFeast
+                ? _feastPearl.X + side * FeastStandoff
+                : target.Center.X + side * IntroStopDistance;
             float goalY = SurfaceAbove(goalX, target.Bottom.Y) + BurrowDepth;
             Vector2 desired = (new Vector2(goalX, goalY) - NPC.Center).SafeNormalize(Vector2.UnitY) * IntroTravelSpeed;
             NPC.velocity = Vector2.Lerp(NPC.velocity, desired, BurrowTravelTurn);
@@ -166,7 +175,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (EveryTicks(24))
                 SoundEngine.PlaySound(SoundID.Item14 with { Volume = 0.2f + 0.4f * closeness, Pitch = -1f }, NPC.Center);
 
-            if (distX > BurrowExitTolerance && Timer > 0f)
+            if (distX > (HasFeast ? FeastExitTolerance : BurrowExitTolerance) && Timer > 0f)
                 return;
 
             StateData = NPC.Center.X; // точка выхода зафиксирована
@@ -212,7 +221,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // 3. Выход наружу и тяжёлое приземление
         private void IntroErupt()
         {
-            NPC.velocity.Y += Gravity * 0.6f;
+            NPC.velocity.Y += Gravity * EruptGravityShare;
             if (NPC.velocity.Y > 0f)
                 NPC.noTileCollide = false; // на спуске снова ловим землю
 
@@ -225,18 +234,30 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             EnterSubState(IntroSubStand, IntroShort ? IntroStandTicksShort : IntroStandTicks);
         }
 
-        // 4. Пауза: выпрямился, стряхивает песок и смотрит на того, кто его позвал
+        // 4. Пауза: выпрямился, стряхивает песок и смотрит на того, кто его позвал —
+        // или на жемчужину, если позвали с алтаря
         private void IntroStand(Player target)
         {
             ApplyGravity();
             Brake();
-            FaceTarget(target);
+            if (HasFeast)
+                FaceX(_feastPearl.X);
+            else
+                FaceTarget(target);
 
             if (EveryTicks(7))
                 SpawnSandBurst(NPC.Center - new Vector2(90f, 60f), 180, 60, 3, 1f, -1.5f, 0.5f); // песок осыпается с панциря
 
-            if (Timer <= 0f)
-                EnterSubState(IntroSubRoar, RoarWindupTicks);
+            if (Timer > 0f)
+                return;
+
+            if (CanReachFeast())
+            {
+                EnterSubState(IntroSubFeast, FeastTicks);
+                return;
+            }
+            _feastPearl = Vector2.Zero; // приземлился не там — не дотянуться
+            EnterSubState(IntroSubRoar, RoarWindupTicks);
         }
 
         // 5. Рёв (клип roar: вдох, пик) и выпуск — с именем на экране при первой встрече
@@ -302,6 +323,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 _deathSceneStarted = false;
                 _spearFormStarted = false;
                 _deathCrownReleased = false;
+                _deathBurstDone = false;
                 return;
             }
 
@@ -311,9 +333,20 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 OnFinalBlow();
             }
 
+            // Кульминация: накалившийся панцирь лопается, и с этого мига сгорает в песок
+            if (!_deathBurstDone && DeathElapsed >= DeathDissolveStart)
+            {
+                _deathBurstDone = true;
+                OnShellBurst();
+            }
+            LightDeathCracks();
+
             float wipe = DeathWipe();
             if (wipe > 0f && wipe < 1f)
+            {
                 PourSandFromWipe(wipe);
+                LightDissolveEdge(wipe);
+            }
             else if (wipe <= 0f && DeathElapsed > 20f && EveryTicks(DeathEmberInterval))
                 SpawnCrackEmber();
 
@@ -338,18 +371,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             SoundEngine.PlaySound(SoundID.NPCDeath1 with { Pitch = -0.6f }, NPC.Center);
             SoundEngine.PlaySound(SoundID.Item14 with { Pitch = -0.9f, Volume = 0.8f }, NPC.Center);
 
-            // Трещины: разбросаны по панцирю, разгораются по очереди
-            _deathCracks.Clear();
-            for (int i = 0; i < DeathCrackCount; i++)
-            {
-                _deathCracks.Add(new DeathCrack
-                {
-                    Local = new Vector2(Main.rand.NextFloat(-95f, 95f), Main.rand.NextFloat(-45f, 30f)),
-                    Angle = Main.rand.NextFloat(MathHelper.TwoPi),
-                    Length = Main.rand.NextFloat(28f, 70f),
-                    Delay = i * DeathCrackStagger,
-                });
-            }
+            // Трещины: ломаные с ответвлениями, разгораются по очереди (King_crab.DeathFx.cs)
+            GenerateDeathCracks();
         }
 
         // Песок сыплется с линии, которая ползёт по панцирю сверху вниз. Песчинки берутся из
@@ -363,7 +386,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             Texture2D tex = TextureAssets.Npc[Type].Value;
             int frameHeight = tex.Height / Math.Max(1, Main.npcFrameCount[Type]);
-            int row = Math.Clamp((int)(frameHeight * wipe), 0, frameHeight - 1);
+            int row = Math.Clamp((int)(frameHeight * DissolveLine(wipe)), 0, frameHeight - 1); // строка рваной кромки шейдера
             int rowStart = (NPC.frame.Y + row) * _bodyPixelsWidth;
 
             Span<short> solid = stackalloc short[_bodyPixelsWidth];
@@ -420,7 +443,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             if (DeathElapsed - crack.Delay < DeathCrackGrowTicks * 0.5f)
                 return;
 
-            Vector2 at = BodyAnchorToWorld(crack.Local);
+            Vector2 at = BodyAnchorToWorld(crack.Points[Main.rand.Next(crack.Points.Length)]);
             SoAParticles.SpawnStreak(at, new Vector2(Main.rand.NextFloatDirection() * 0.8f, -Main.rand.NextFloat(1.5f, 3.2f)),
                 DeathCrackColor, 2.2f, gravity: -0.02f, life: Main.rand.Next(24, 40), lengthPerSpeed: 2f);
             SoAParticles.AddLight(at, DeathCrackColor, 0.6f, 6);
@@ -437,39 +460,6 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             tex.GetData(_bodyPixels);
             _bodyPixelsWidth = tex.Width;
             return true;
-        }
-
-        // Рисовать внутри BeginAdditive: трещины светятся изнутри панциря
-        private void DrawDeathCracks(SpriteBatch sb)
-        {
-            if (State != CrabState.Dying || _deathCracks.Count == 0)
-                return;
-
-            float wipe = DeathWipe();
-            Texture2D tex = TextureAssets.Npc[Type].Value;
-            float halfH = tex == null ? 0f : tex.Height / Math.Max(1, Main.npcFrameCount[Type]) / 2f;
-            float wipeLocalY = -halfH + wipe * halfH * 2f; // выше этой линии панциря уже нет
-            float pulse = 0.8f + 0.2f * (float)Math.Sin(Main.GameUpdateCount * 0.3f);
-            float dirSign = NPC.spriteDirection * ClawDirFix;
-
-            foreach (DeathCrack crack in _deathCracks)
-            {
-                if (wipe > 0f && crack.Local.Y < wipeLocalY)
-                    continue;
-
-                float grow = MathHelper.Clamp((DeathElapsed - crack.Delay) / DeathCrackGrowTicks, 0f, 1f);
-                if (grow <= 0f)
-                    continue;
-
-                Vector2 start = BodyAnchorToWorld(crack.Local);
-                float rotation = AnimatedBodyRotation() + (dirSign > 0f ? crack.Angle : MathHelper.Pi - crack.Angle);
-                float length = crack.Length * grow * NPC.scale;
-                Vector2 middle = start + rotation.ToRotationVector2() * length * 0.5f;
-
-                Color c = DeathCrackColor * (pulse * 0.9f);
-                SoAVfx.DrawTintedQuad(sb, middle, new Vector2(length, 5f), rotation, c);
-                SoAVfx.DrawTintedGlow(sb, start, new Vector2(26f * grow), DeathCrackColor * 0.6f);
-            }
         }
 
         #endregion

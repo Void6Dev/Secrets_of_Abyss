@@ -1,3 +1,5 @@
 displayName = Secrets of Abyss
 author = Void2
 version = 0.3
+# В .tmod не кладём документацию, исходники арта и шейдеров (игра грузит .xnb), компилятор шейдеров
+buildIgnore = Docs/*, Properties/*, Assets/Effects/Compiler/*, *.md, *.py, *.aseprite, *.fx, *.fxo, *.user

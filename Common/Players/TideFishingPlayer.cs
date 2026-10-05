@@ -4,7 +4,7 @@ using Terraria.DataStructures;
 using Terraria.ModLoader;
 using SoA.Content.Items.Fishing;
 using SoA.Content.Items.Materials;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Common.Players
 {

@@ -397,15 +397,18 @@ namespace SoA.Content.Projectiles
                 Main.spriteBatch.Begin(SpriteSortMode.Immediate, BlendState.Additive, null, null, null, null,
                     Main.GameViewMatrix.TransformationMatrix);
 
-                GameShaders.Misc["SoA:BeamGlow"].UseOpacity(glowPulse).Apply();
+                // Эффект общий с кольцами луча — цвет выставляем сами, иначе останется чужой
+                var glowShader = GameShaders.Misc["SoA:BeamGlow"];
+                glowShader.Shader.Parameters["uBlend"]?.SetValue(0f);
+                glowShader.UseOpacity(glowPulse).Apply();
                 Main.EntitySpriteDraw(glowTex, tipPos, null, Color.White, 0f, glowTex.Size() / 2f,
-                    0.7f * Power, SpriteEffects.None, 0);
+                    0.9f * Power, SpriteEffects.None, 0);
 
                 if (_fireFlash > 0.05f)
                 {
-                    GameShaders.Misc["SoA:BeamGlow"].UseOpacity(_fireFlash).Apply();
+                    glowShader.UseOpacity(_fireFlash).Apply();
                     Main.EntitySpriteDraw(glowTex, tipPos, null, Color.White, 0f, glowTex.Size() / 2f,
-                        0.5f + 1.7f * _fireFlash, SpriteEffects.None, 0);
+                        0.6f + 2f * _fireFlash, SpriteEffects.None, 0);
                 }
 
                 Main.spriteBatch.End();
@@ -624,9 +627,10 @@ namespace SoA.Content.Projectiles
 
             // Муззл-вспышка у наконечника
             var glowShader = GameShaders.Misc["SoA:BeamGlow"];
+            glowShader.Shader.Parameters["uBlend"]?.SetValue(_waterBlend);
             glowShader.UseOpacity(0.8f * fade * _grow).Apply();
             Main.EntitySpriteDraw(starTex, start, null, Color.White, 0f, starTex.Size() / 2f,
-                0.8f * _grow, SpriteEffects.None, 0);
+                1.1f * _grow, SpriteEffects.None, 0);
 
             // Точка попадания: звезда + расширяющиеся кольца
             if (_hitsWall && _reach >= _length - 1f)
@@ -636,7 +640,7 @@ namespace SoA.Content.Projectiles
 
                 glowShader.UseOpacity(0.55f * impPulse * fade).Apply();
                 Main.EntitySpriteDraw(starTex, impact, null, Color.White, 0f, starTex.Size() / 2f,
-                    0.9f, SpriteEffects.None, 0);
+                    1.2f, SpriteEffects.None, 0);
 
                 glowShader.UseOpacity(0.4f * impPulse * fade).Apply();
                 Main.EntitySpriteDraw(starTex, impact, null, Color.White,

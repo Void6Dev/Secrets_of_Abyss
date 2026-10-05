@@ -8,14 +8,14 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
     public partial class King_crab
     {
         // ---------- ТЕЛО ----------
-        private const float BodyLift = 30f;          // на сколько px панцирь приподнят над землёй
+        private const float BodyLift = 10f;          // на сколько px панцирь приподнят над землёй: краб сидит низко, на разведённых лапах
         private const float BodySquashAmount = 0.32f; // предел деформации тела (squash & stretch)
 
         // ---------- НОГИ ----------
         // Досягаемость ноги = (LegBoneUpperPx + LegBoneLowerPx) * LegScale и должна быть заметно
         // БОЛЬШЕ расстояния бедро→грунт, иначе IK клампится, колени распрямляются в спички и
-        // стопы повисают над землёй. Сейчас задействовано 0.80–0.88 длины.
-        private const float LegScale = 1.6f;         // размер ног относительно тела
+        // стопы повисают над землёй. Сейчас задействовано 0.74–0.91 длины.
+        private const float LegScale = 2f;           // размер ног относительно тела
         private const float LegBoneUpperPx = 40f;    // пивот→колено в KingCrabLegUpper.png
         private const float LegBoneLowerPx = 44f;    // колено→лапка в KingCrabLegLower.png
 
@@ -24,18 +24,20 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private static readonly Vector2 LowerPivot = new(2f, 6f);
 
         // Бёдра относительно центра тела (правая сторона; левая зеркалится по X).
-        // 4 ноги на бок; посажены ниже по панцирю, чтобы ноге хватало длины до грунта.
+        // 4 ноги на бок, все на боковой кромке панциря, сверху вниз. Раньше бёдра сидели
+        // под брюхом, стопы — почти под ними, и ноги висели гребёнкой прямых спичек.
         private static readonly Vector2[] HipLocal =
         {
-            new(30f, 18f),
-            new(52f, 26f),
-            new(74f, 30f),
-            new(96f, 28f),
+            new(96f, 2f),
+            new(104f, 16f),
+            new(104f, 30f),
+            new(96f, 44f),
         };
 
-        // Насколько стопа стоит наружу от бедра по X (крабья раскоряка). Длина массива
-        // обязана совпадать с HipLocal — это число ног на бок.
-        private static readonly float[] FootSpread = { 44f, 40f, 42f, 52f };
+        // Насколько стопа стоит наружу от бедра по X (крабья раскоряка), в px ноги до LegScale.
+        // Нижние бёдра ниже — им и шагать дальше: стопы расходятся веером, колени аркой над ними.
+        // Длина массива обязана совпадать с HipLocal — это число ног на бок.
+        private static readonly float[] FootSpread = { 30f, 46f, 60f, 68f };
 
         // ---------- ПОХОДКА ----------
         private const int StepDuration = 12;         // тиков на шаг в покое
@@ -51,23 +53,20 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private const float LegReachSafety = 0.95f;  // доля длины ноги, дальше которой стопу не ставим
 
         // ---------- РУКА (плечо → локоть → запястье) ----------
-        // ВНИМАНИЕ: ArmBone*Px — это НЕ размер текстуры, а РАССТАНОВКА круглых шаров вдоль руки.
-        // Спрайты сегментов круглые, поэтому:
-        //   • шары обязаны перекрываться, иначе рука рвётся на отдельные бусины;
-        //   • ArmBoneLowerPx задаёт, насколько клешня накрывает локтевой шар: меньше — хоронит
-        //     его целиком, больше — между ними появляется просвет;
-        //   • ArmScale масштабирует И размер шаров, И расстояния между ними (l = ArmBone*Px *
-        //     ArmScale). Хочешь только шары крупнее — подними ArmScale и урежь ArmBone*Px.
-        // Длина руки = (ArmBoneUpperPx + ArmBoneLowerPx) * ArmScale. Если запястье уносится
-        // дальше (клипы прибавляют ox до 44), рука РАСТЯГИВАЕТСЯ — шары расходятся.
+        // Сегменты нарисованы «вниз» от сустава: верхний сустав у кромки текстуры, ось кости — +Y.
+        // Каждый поворачивается вдоль своей кости (раньше спрайты считались круглыми шарами и
+        // рисовались без поворота — продолговатые сегменты висели кубиками и не стыковались).
+        // ArmBone*Px — расстояние сустав→сустав ВНУТРИ текстуры, длина руки = их сумма * ArmScale.
+        // Если запястье уносится дальше (клипы прибавляют ox до 44), сегменты вытягиваются
+        // вдоль кости ровно до следующего сустава — рука не рвётся.
         private const float ArmScale = 1.5f;         // размер сегментов руки относительно тела
-        private const float ArmBoneUpperPx = 20f;    // плечо→локоть
+        private const float ArmBoneUpperPx = 23f;    // плечо→локоть
         private const float ArmBoneLowerPx = 20f;    // локоть→запястье
         private const float ArmElbowSign = -1f;       // сторона сгиба локтя: +1 вверх, -1 вниз
 
-        // Центры шаров ВНУТРИ текстур — менять только при перерисовке спрайтов
-        private static readonly Vector2 ArmUpperPivot = new(10.5f, 18f); // KingCrabArmUpper.png (34x33)
-        private static readonly Vector2 ArmLowerPivot = new(5f, 25.5f); // KingCrabArmLower.png (23x22)
+        // Верхний сустав (точка крепления) ВНУТРИ текстур — менять только при перерисовке спрайтов
+        private static readonly Vector2 ArmUpperJoint = new(15f, 7f); // KingCrabArmUpper.png (30x33)
+        private static readonly Vector2 ArmLowerJoint = new(10f, 5f); // KingCrabArmLower.png (20x27)
 
         // ---------- КЛЕШНИ ----------
         // Плечевой шар садится на КРОМКУ панциря (на этой высоте она в -95px от центра),

@@ -5,7 +5,9 @@ using Terraria;
 using Terraria.DataStructures;
 using Terraria.Graphics.Shaders;
 using Terraria.ModLoader;
-using SoA.Content.Tiles.Other;
+using SoA.Content.Tiles.Furniture;
+using SoA.Content.Tiles.Lighthouse;
+using SoA.Content.Tiles.Shrines;
 
 namespace SoA.Common.Graphics
 {

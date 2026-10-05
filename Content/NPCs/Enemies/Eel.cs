@@ -10,7 +10,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using SoA.Common.Graphics;
 using SoA.Content.Items.Materials;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Content.NPCs.Enemies
 {

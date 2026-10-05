@@ -7,7 +7,7 @@ using Terraria.ModLoader;
 using SoA.Common.Graphics.Particles;
 using SoA.Common.Systems;
 using SoA.Common.Utils;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Common.Graphics.Atmosphere
 {

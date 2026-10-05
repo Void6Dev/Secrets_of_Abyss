@@ -36,22 +36,36 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         // Слетевшая корона: локальная симуляция; старт детерминирован по синхронизированному Timer
         // Корона живёт отдельным маленьким автоматом: пока король под землёй (или умирает)
         // она не исчезает, а сваливается с головы и остаётся лежать на грунте; когда король
-        // возвращается наверх, она сама плавно взлетает обратно и садится на панцирь.
+        // возвращается наверх, под ней вздрагивает песок, бьёт фонтан и подбрасывает её
+        // по дуге, а король ловит её головой (Returning).
         // Hidden — корона ещё под песком (появление), Emerging — встаёт из грунта,
         // Rolling — после смерти катится к ногам игрока
         private enum CrownMode { Seated, Falling, Landed, Returning, Hidden, Emerging, Rolling }
 
-        private const int CrownReturnTicks = 40;   // длительность возврата на голову
-        private const float CrownReturnArc = 46f;  // высота дуги, по которой корона летит назад
         private const float CrownRestOffset = 6f;  // насколько основание короны утоплено в грунт
+
+        // Возврат: дрожь на песке → фонтан подбрасывает → летит, кувыркаясь → король ловит головой.
+        // Целиком около секунды: 20 тиков дрожи + 38–44 полёта
+        private const int CrownSummonTicks = 20;        // дрожит перед подбросом — видно, что сейчас взлетит
+        private const float CrownFlightGravity = 0.32f;
+        private const float CrownFlightPxPerTick = 11f; // по ней считаем время полёта от расстояния
+        private const int CrownFlightMinTicks = 38;
+        private const int CrownFlightMaxTicks = 44;
+        private const float CrownFlightHoming = 0.7f;   // с этой доли полёта корона доводится на голову
+        private const float CrownCatchSpringKick = 0.3f;
+        private const float CrownCatchSquash = 0.22f;
+        private const float CrownSelfGlow = 0.22f;      // слетевшая корона чуть светится сама: в темноте не пропадает
 
         private CrownMode _crownMode;
         private Vector2 _crownPos;   // позиция ОСНОВАНИЯ короны (пивот — низ текстуры)
         private Vector2 _crownVel;
         private float _crownRot;
         private float _crownRotVel;
-        private float _crownReturnT;
+        private int _crownSummonLeft;
+        private int _crownFlightTick;
+        private int _crownFlightTicks;
         private Vector2 _crownReturnFrom;
+        private Vector2 _crownLaunchVel;
         private float _crownReturnRotFrom;
         private float _crownEmergeSurfaceY; // поверхность, из которой встаёт корона: ниже неё не рисуем
         private bool _crownEmergedFully;
@@ -110,9 +124,15 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     break;
 
                 case CrownMode.Returning:
-                    // Успел снова уйти под землю — роняем обратно
+                    // Успел снова уйти под землю — корона падает оттуда, где была (в полёте —
+                    // со своей скоростью), а не с головы: DropCrown сначала ставит её на панцирь
                     if (dying || underground)
-                        DropCrown();
+                    {
+                        _crownVel = _crownSummonLeft > 0 ? Vector2.Zero
+                            : _crownLaunchVel + new Vector2(0f, CrownFlightGravity * _crownFlightTick);
+                        _crownRotVel = 0.08f * Math.Sign(_crownVel.X);
+                        _crownMode = CrownMode.Falling;
+                    }
                     else
                         UpdateCrownReturn();
                     break;
@@ -268,29 +288,104 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
         private void BeginCrownReturn()
         {
             _crownMode = CrownMode.Returning;
-            _crownReturnT = 0f;
+            _crownSummonLeft = CrownSummonTicks;
+            _crownFlightTick = 0;
             _crownReturnFrom = _crownPos;
             _crownReturnRotFrom = _crownRot;
-            SoundEngine.PlaySound(SoundID.Item25 with { Pitch = 0.4f, Volume = 0.45f }, _crownPos);
+            SoundEngine.PlaySound(SoundID.Dig with { Pitch = 0.2f, Volume = 0.5f }, _crownPos);
         }
 
-        // Возврат: летит по дуге к посадочному месту, которое само едет вместе с королём,
-        // поэтому цель пересчитываем каждый тик, а не запоминаем один раз
+        // Возврат: сначала дрожит на песке, потом фонтан подбрасывает её к королю
         private void UpdateCrownReturn()
         {
-            _crownReturnT = Math.Min(1f, _crownReturnT + 1f / CrownReturnTicks);
-            float e = MathHelper.SmoothStep(0f, 1f, _crownReturnT);
+            if (_crownSummonLeft > 0)
+            {
+                _crownSummonLeft--;
+                float t = 1f - _crownSummonLeft / (float)CrownSummonTicks;
+                _crownPos = _crownReturnFrom + new Vector2((float)Math.Sin(Main.GameUpdateCount * 2.1f) * 1.6f * t,
+                    -Math.Abs((float)Math.Sin(Main.GameUpdateCount * 1.3f)) * 2f * t);
+                _crownRot = _crownReturnRotFrom + (float)Math.Sin(Main.GameUpdateCount * 1.7f) * 0.12f * t;
+                if (Main.rand.NextBool(2))
+                {
+                    Dust d = Dust.NewDustPerfect(_crownReturnFrom + new Vector2(Main.rand.NextFloatDirection() * 16f, 4f),
+                        GroundDustType(_crownReturnFrom), new Vector2(Main.rand.NextFloatDirection() * 0.6f, -Main.rand.NextFloat(1f, 2.5f + 2f * t)));
+                    d.scale = Main.rand.NextFloat(0.8f, 1.2f);
+                }
+                if (_crownSummonLeft == 0)
+                    LaunchCrown();
+                return;
+            }
 
+            _crownFlightTick++;
+            float flight = _crownFlightTick / (float)_crownFlightTicks;
+            float tk = _crownFlightTick;
+
+            // Баллистика от точки подброса; в конце доводим на живое посадочное место:
+            // король за время полёта мог сдвинуться, а ловить корону он обязан головой
+            Vector2 ballistic = _crownReturnFrom + _crownLaunchVel * tk + new Vector2(0f, 0.5f * CrownFlightGravity * tk * tk);
             Vector2 seat = CrownSeatWorld(out float seatRot);
-            _crownPos = Vector2.Lerp(_crownReturnFrom, seat, e);
-            _crownPos.Y -= (float)Math.Sin(e * Math.PI) * CrownReturnArc; // подскок, чтобы не ползла по земле
-            _crownRot = MathHelper.Lerp(_crownReturnRotFrom, seatRot, e);
+            float home = MathHelper.SmoothStep(0f, 1f, MathHelper.Clamp((flight - CrownFlightHoming) / (1f - CrownFlightHoming), 0f, 1f));
+            _crownPos = Vector2.Lerp(ballistic, seat, home);
 
-            if (_crownReturnT < 1f)
+            // Один полный кувырок в воздухе, к приземлению — ровно в посадочный наклон
+            int spinDir = Math.Sign(_crownLaunchVel.X) == 0 ? 1 : Math.Sign(_crownLaunchVel.X);
+            float spun = _crownReturnRotFrom + spinDir * MathHelper.TwoPi * MathHelper.SmoothStep(0f, 1f, flight);
+            _crownRot = spun + MathHelper.WrapAngle(seatRot - spun) * home;
+
+            if (EveryTicks(2))
+            {
+                Dust trail = Dust.NewDustPerfect(_crownPos - new Vector2(0f, 14f), DustID.GoldCoin,
+                    -_crownLaunchVel * 0.1f);
+                trail.noGravity = true;
+                trail.scale = 0.9f;
+            }
+
+            if (_crownFlightTick < _crownFlightTicks)
                 return;
 
+            CatchCrown();
+        }
+
+        // Фонтан из песка: время полёта — по расстоянию, цель — где король БУДЕТ к приземлению
+        private void LaunchCrown()
+        {
+            Vector2 seat = CrownSeatWorld(out _);
+            _crownFlightTicks = (int)MathHelper.Clamp(Vector2.Distance(_crownReturnFrom, seat) / CrownFlightPxPerTick,
+                CrownFlightMinTicks, CrownFlightMaxTicks);
+            Vector2 target = seat + NPC.velocity * _crownFlightTicks;
+            float t = _crownFlightTicks;
+            _crownLaunchVel = (target - _crownReturnFrom) / t - new Vector2(0f, 0.5f * CrownFlightGravity * t);
+            _crownReturnRotFrom = _crownRot;
+            _crownReturnFrom = _crownPos;
+
+            TriggerBurrowBurst(_crownReturnFrom + new Vector2(0f, CrownRestOffset), 70f, 56f, 22f);
+            int dust = GroundDustType(_crownReturnFrom);
+            for (int i = 0; i < 16; i++)
+            {
+                Dust d = Dust.NewDustPerfect(_crownReturnFrom + new Vector2(Main.rand.NextFloatDirection() * 12f, 2f), dust,
+                    new Vector2(Main.rand.NextFloatDirection() * 1.5f, -Main.rand.NextFloat(3f, 8f)));
+                d.scale = Main.rand.NextFloat(1f, 1.5f);
+            }
+            SoundEngine.PlaySound(SoundID.Item14 with { Pitch = 0.4f, Volume = 0.45f }, _crownReturnFrom);
+            SoundEngine.PlaySound(SoundID.Item25 with { Pitch = 0.4f, Volume = 0.45f }, _crownReturnFrom);
+        }
+
+        // Поймал головой: звон, корона качается на пружине, туша чуть приседает
+        private void CatchCrown()
+        {
             _crownMode = CrownMode.Seated;
-            SoundEngine.PlaySound(SoundID.Tink with { Pitch = 0.5f, Volume = 0.4f }, _crownPos);
+            Vector2 at = CrownSeatWorld(out _) - new Vector2(0f, 18f);
+            _crownSpringVel += NPC.spriteDirection * CrownCatchSpringKick;
+            _squashImpact = Math.Max(_squashImpact, CrownCatchSquash);
+            SpawnFlash(at, 110f, CrownGoldColor, 4);
+            for (int i = 0; i < 10; i++)
+            {
+                Dust d = Dust.NewDustPerfect(at, DustID.GoldCoin, Main.rand.NextVector2Circular(3f, 3f) - new Vector2(0f, 1.5f));
+                d.noGravity = true;
+                d.scale = Main.rand.NextFloat(0.8f, 1.2f);
+            }
+            SoundEngine.PlaySound(SoundID.Item29 with { Pitch = 0.5f, Volume = 0.45f }, at);
+            SoundEngine.PlaySound(SoundID.Tink with { Pitch = 0.6f, Volume = 0.6f }, at);
         }
 
         private void EnsureCrownTextures()
@@ -390,7 +485,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
 
             Vector2 origin = new Vector2(tex.Width / 2f, tex.Height);
             Vector2 pos;
-            if (_crownMode == CrownMode.Seated)
+            bool loose = _crownMode != CrownMode.Seated;
+            if (!loose)
             {
                 pos = CrownSeatWorld(out rot);
             }
@@ -398,6 +494,10 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
             {
                 pos = _crownPos; // слетела/лежит/возвращается — позу ведёт UpdateCrown
                 rot = _crownRot;
+                // Свет — в точке самой короны: drawColor считан в центре короля, а тот в это
+                // время под землёй, и лежащая на песке корона рисовалась чёрной
+                float fade = drawColor.A / 255f;
+                drawColor = Lighting.GetColor((pos - new Vector2(0f, tex.Height * 0.5f)).ToTileCoordinates()) * fade;
             }
 
             SpriteEffects fx = NPC.spriteDirection * ClawDirFix > 0f ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
@@ -414,7 +514,9 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                 glow = 0.3f;
             glow = MathHelper.Clamp(glow + AnimPose(LayerCrown).Aux, 0f, 1f);
 
-            if (glow > 0f && _crownMode == CrownMode.Seated && _crownGlowTex.Value != null)
+            if (loose)
+                glow = CrownSelfGlow * (drawColor.A / 255f); // слетевшая — едва тлеет, но видна в темноте
+            if (glow > 0f && _crownGlowTex.Value != null)
                 spriteBatch.Draw(_crownGlowTex.Value, pos - screenPos, null, Color.White * glow, rot, origin, crownScale, fx, 0f);
         }
 

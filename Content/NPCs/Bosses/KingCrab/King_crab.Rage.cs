@@ -9,7 +9,7 @@ using Terraria.ID;
 using Terraria.Localization;
 using Terraria.ModLoader;
 using SoA.Common.Graphics;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Content.NPCs.Bosses.KingCrab
 {

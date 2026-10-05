@@ -2,8 +2,8 @@ using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Microsoft.Xna.Framework;
-using SoA.Assets.Dusts;
-using SoA.Content.Items.Placebles;
+using SoA.Content.Dusts;
+using SoA.Content.Items.Placeables;
 using SoA.Content.Projectiles;
 
 namespace SoA.Content.Tiles.Nature

@@ -1,7 +1,7 @@
 using Terraria;
 using Terraria.Localization;
 using Terraria.ModLoader;
-using SoA.Content.Worldgen;
+using SoA.Content.Biomes;
 
 namespace SoA.Content.Items.Fishing
 {

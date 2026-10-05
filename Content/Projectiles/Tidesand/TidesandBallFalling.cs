@@ -1,6 +1,6 @@
 using Terraria.ID;
 using Terraria.ModLoader;
-using SoA.Content.Items.Placebles;
+using SoA.Content.Items.Placeables;
 using SoA.Content.Tiles.Nature;
 
 namespace SoA.Content.Projectiles
@@ -9,7 +9,7 @@ namespace SoA.Content.Projectiles
     // при приземлении ставит обратно Tidesand_tile (маппинг в TileID.Sets.FallingBlockProjectile)
     public class TidesandBallFalling : ModProjectile
     {
-        public override string Texture => "SoA/Content/Items/Placebles/Tidesand";
+        public override string Texture => "SoA/Content/Items/Placeables/Tidesand";
 
         public override void SetStaticDefaults()
         {

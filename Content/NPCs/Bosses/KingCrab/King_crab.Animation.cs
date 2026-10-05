@@ -367,11 +367,15 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                         return "burrow_swim";
                     if (SubState < IntroSubStand)
                         return BurrowMaxAir - Timer < BurrowEruptClipTicks ? "burrow_erupt" : AirborneClip();
+                    if (SubState == IntroSubFeast)
+                        return "feast";
                     if (SubState < IntroSubRoar)
                         return "proud"; // выпрямился во весь рост перед рёвом
                     return "roar";
                 case CrabState.Phase2Transition:
                     return "phase2_transition";
+                case CrabState.Stagger:
+                    return "stagger";
                 case CrabState.ClawSlam:
                     return SubState == 0f ? "claw_slam" : "slam_recover";
                 case CrabState.ClawSweep:
@@ -397,7 +401,7 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                     {
                         BurrowSubPrep => "jump_crouch",
                         BurrowSubSink => "burrow_dive",
-                        BurrowSubTravel or BurrowSubWarn => "burrow_swim",
+                        BurrowSubTravel or BurrowSubClaws or BurrowSubWarn => "burrow_swim",
                         // Вылет: сначала раскрытие, дальше обычные фазы полёта
                         _ => BurrowMaxAir - Timer < BurrowEruptClipTicks ? "burrow_erupt" : AirborneClip(),
                     };
@@ -420,6 +424,8 @@ namespace SoA.Content.NPCs.Bosses.KingCrab
                         _ => "rage_hunt",
                     };
                 case CrabState.Scuttle:
+                    if (_swimming)
+                        return "swim_glide"; // клешни прижаты по ходу, гребут лапы
                     if (_sulkTimer > 0)
                         return "displeased";
                     if (_crownCareTimer > 0)
